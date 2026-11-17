@@ -162,7 +162,10 @@ class CDPChannel:
             return None
         if isinstance(value, (dict, list)):
             return value
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return value
 
     async def scan_elements(self, session_id: str | None = None) -> list[dict]:
         raws = await self.evaluate_json(SCAN_EXPR, session_id)

@@ -19,6 +19,9 @@
 | F7 | 回复归档扩展 `local-tools.trae-reply-reader` 已安装但固定在其他项目（demo/liangguan），心跳停于 2026-10；对本项目无归档。CDP DOM 读回可替代该扩展 | `trae_replies.py status`；globalStorage status.json |
 | F8 | 多显示器真实风险实证：探针期间 Trae 窗口被移到第二显示器 (2796,-289)，固定坐标截图失效 | 窗口枚举输出；`trae_after_send.png` 截到错误窗口 |
 | F9 | 测试消息实际以 Agent 模式+自动审批发送（模式菜单误点父容器）。模型仅回复 OK，工作区文件零变更（已核对）。**适配器必须把审批模式强制为手动，除非用户显式授权** | `cdp_send_test.mjs` 日志；`find . -type f` 核对 |
+| F10 | 审批模式触发器 `button[aria-label='自动审批']` 在 3.6.13 上**无法通过 CDP 打开菜单**（JS click 与可信 Input 鼠标事件均无 `.popup-menu`）；Agent 模式须由人工预先切换为手动审批。适配器对 chat 模式忽略该限制并返回显式 `unverified:*` | S2 探针（2026-11-17）：`approval -> unverified:no_menu` |
+| F11 | 模式菜单项须用**可信鼠标事件**点击（JS `el.click()` 无响应、模式不变）；点击容器 `.popup-menu-item` 的中心即可切换，菜单随之关闭 | S2 探针（2026-11-17）：JS click 后 `Agent` 不变，可信事件后 `Chat` |
+| F12 | S2 活体闭环通过：MCP 内存客户端提交固定无害消息 → `submitted→running→claimed_done` → `read_result` 读回 OK，工作区 `git status` 前后一致；虚拟化列表会使全文长度回落，`claimed_done` 以“曾 running 且现已空闲”为判据 | `tests/test_live_mcp.py`（GUIBRIDGE_LIVE=1） |
 
 ## 已验证的 Trae 3.6.13 定位器（IDE 模式）
 

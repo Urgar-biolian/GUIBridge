@@ -40,7 +40,7 @@
 4. packages/events/store.py：SQLite 事件存储（动作、状态迁移、快照与截图证据路径、审批记录），保留期可配置。
 5. packages/execution/safety.py：窗口白名单、动作前身份核对、高影响控件审批 token 校验。
 6. packages/execution/actions.py：受限动作执行（click/type/select），统一走 resolver 重定位 + 前后快照 + ActionResult。
-7. packages/mcp/server.py：官方 MCP Python SDK，固定 8 工具（PRD §6），参数校验、审批拦截、全调用写事件存储。
+7. packages/mcp_gateway/server.py：官方 MCP Python SDK，固定 8 工具（PRD §6），参数校验、审批拦截、全调用写事件存储。
 8. apps/desktop-agent/main.py：FastAPI 控制平面（托管启动注入 --remote-debugging-port 随机端口仅 loopback、审批端点、事件 SSE）。
 9. tests/：状态机单测（fixture 驱动）+ live 集成：外部 MCP Client（可用 mcp CLI 或 python client）调用 trae.send_task 发送一条无害 chat 模式消息（内容固定为「请只回复 OK 两个字母，不要执行任何其他操作。」，项目路径 D:\GitHub\Agui），trae.get_status 观测 running→claimed_done，trae.read_result 读回 OK。
 

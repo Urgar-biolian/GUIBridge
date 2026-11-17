@@ -11,7 +11,8 @@
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
 - ✅ S1 感知层（A 线，commits `0e46c61`）：CDP/UIA/OCR 三通道、空间融合与冲突标记、semantic_id resolver 与 locators 注册表；单测 32 绿；live 只读定位连续 3 次通过
 - ✅ S4-a 自修复定位（A 线，`c92f3b4`）：漂移后按旧链 hints 重扫 → 唯一候选 → CDP 复验 → 写 pending 补丁（不覆盖注册表）；≥2 候选返回 `conflict` 停止；单测 46 绿 + live 3 轮通过
-- ⬜ 其余：S2/S3 与 S4-b（B 线）、S5-a 评测（A 线）：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
+- ✅ S2 适配器 / 事件存储 / MCP（A 线补齐）：SQLite 事件与任务状态机、安全门（白名单/身份/高影响审批）、受限动作执行、Trae 适配器（IDE/Chat 前置、可信鼠标模式切换、手动审批探测）、Engine 审计面、8 工具 MCP、桌面代理 REST/SSE；单测 83 绿；live MCP 闭环 `submitted→running→claimed_done` 并读回 OK，工作区无变更（F10–F12）
+- ⬜ 其余：S3 与 S4-b（B 线）、S5 评测（A 线）：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
 
 ## 双人分工（本仓库执行约定）
 
@@ -64,7 +65,7 @@ packages/semantic/      数据模型 / 重定位 / 注册表
 packages/execution/     动作 / 验证器 / 安全门
 packages/adapters/      适配器接口 / Trae（locators.yaml）
 packages/events/        SQLite 事件存储（schema.sql）
-packages/mcp/           固定 8 工具 MCP Server
+packages/mcp_gateway/           固定 8 工具 MCP Server
 examples/demo-app/      S3 交接演示目标项目
 probe/                  S0 探针脚本与证据
 tests/                  单测 + live 标记集成测试
