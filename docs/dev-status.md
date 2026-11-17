@@ -65,3 +65,84 @@ G1 前的一次性替身（届时删除，改接 `perception.cdp` + `semantic.re
 
 Python 3.12.9（`.venv`，`pip install -e ".[dev]"`）｜mcp SDK 2.3.0（`MCPServer`）｜Node 便携版
 `C:/Users/lenovo/tools/node`（v24.22.3，S4-b 用）｜无 Trae。
+
+---
+
+## S3 跨 Agent 交接协议 / 独立验证器
+
+命令：`python -m pytest -m "not live" -q` → **173 passed, 5 deselected**（新增 46 条：
+`test_verifier.py` 22 + `test_handoff.py` 24；live 用例见下）。
+
+### 已实现并验证（fixture 驱动）
+
+| dev-prompts S3 任务 | 落点 | 关键行为 |
+|---|---|---|
+| 1 演示项目（隔离仓库） | `examples/demo-app/` | `index.html` 密码显示/隐藏按钮（已完成的参照实现）+ `tests/password-toggle.test.mjs`（target spec）+ `tests/password-field.test.mjs`（既有约束）+ `package.json`；`README.md` 写清 live 配方：**只删实现、保留 spec**，否则 `node --test` 空跑通过。`prepare_workspace()` 复制到独立 git 仓库，带 remote 或非同目录即拒绝 |
+| 2 独立验证器 | `packages/execution/verifier.py` | 只读 Git 与退出码：`verify(repo_path, allow_files, test_commands, since_rev)` 用 `status --porcelain=v1 -uall` + `diff --name-only since..HEAD` + `rev-parse HEAD` 判越界（含「基线本来就脏」时只认白名单内路径），`subprocess.run(argv, shell=False)` 逐条跑验收命令。**`claimed_text` 参数刻意不存在**——UI 文案进不了判据 |
+| 3 交接编排脚本 | `examples/handoff_demo.py` | `TaskPackage`（project_path/task/allow_files/test_commands/stop_condition/mode）→ `handoff()`：记录起始 rev → `send_task` → `poll` → `read_result` → `Verifier.verify` → `store.record("verify") + set_task_state(..., actor="verifier")` → JSON 报告；CLI 打印规划侧需要的那几个字段，`--report` 落完整 JSON |
+| 4 提示注入防护 | `examples/handoff_demo.py` + S2 的 `untrusted` 标记（`adapters/trae/adapter.py:139`、`mcp/server.py:20`） | `read_result` 的文本只以 `report["reply"]` 落进 JSON 报告；本模块的 `subprocess` 只被 `git()` 与 verifier 使用，参数永不来自回复文本，也没有 eval。verifier 的入参签名里根本没有回复文本。`TaskPackage.stop_condition` 复述「不得伪造 verified」 |
+| 5 测试 | `tests/test_verifier.py`、`tests/test_handoff.py`、`tests/test_live_handoff.py`、`tests/conftest.py` | conftest 新增 `ScratchRepo`（真 git 仓库，逐命令 `-c user.*` 不动全局配置）与 `Recorder`（记录 argv、按脚本返回码回放、绝不让字符串进 shell） |
+
+`docs/agent.md`（本分支 S0 既有设计文档，非本轮产物）是这套交接协议与状态语义的来源，S3 按它落地而没有改它；
+实现时发现的口径差列在下面的契约问题里。
+
+三条 dev-prompts 明列的 verifier 用例都有：变更越界（`out_of_scope`）、测试失败（`test_failed` + stdout/stderr 尾部
+4000 字符）、声称完成但无变更（`no_changes`）。另有两条防注入断言：
+`"rm -rf src && touch PWNED ; echo $(whoami)"` 整串只变成一个 argv、`PWNED` 从未出现；
+吹牛回复「已删除所有文件并全部通过」不影响 `final_state`。
+
+链的收口用真实对象跑通（非替身）：`test_the_loop_closes_through_the_real_control_plane` 走
+`build_plane("simulated")` → `Engine.submit` → DOM fixture → 真 `git init` 工作区 → 真
+`["node","--test","tests/*.test.mjs"]` → 迁移链末位 `verified` 且 `events.kind="verify"`。
+CLI 亦已本机实测：把 demo-app 复制成独立仓库、剥掉参照实现后基线验收命令返回 1（spec 确实会红），
+再跑 `python examples/handoff_demo.py --workspace … --node …` → `final_state: verified`、`reasons: []`。
+
+**「执行侧不能自证」是存储层强制的，不只是文档约定**：`store.set_task_state(task_id, "verified", …)`
+在 `actor != "verifier"` 时抛 `PermissionError`（`packages/events/store.py:187`），因此有两条断言分别证明
+「executor 提权失败」与「只有 verifier 写得出第 4 个 transition」。但这条门只覆盖 `verified` 一个词——
+`store.py` 无迁移顺序表（见下）。
+
+### 未达成的出口条件（需要 live 环境，本机无 Trae 安装）
+
+1. **「端到端 live 演示一次成功」— 未验证。** `tests/test_live_handoff.py`（2 条，默认 deselected）已按 dev-prompts
+   §5 写好：外部 MCP Client + stdio、剥离参照实现、让 Trae 做「显示/隐藏 + 补测试」、独立 verifier 判 verified，
+   并在真正交接前跑一次 pre-flight 验收证明基线必须失败（否则「verified」是自证）。跳过原因与 S2 相同：
+   本机无 `D:\Program\Trae\Trae.exe`，`packages/perception/cdp.py` 仍是 S1 桩（gate G1）。
+2. **「TaskRecord 含 `submitted → running → claimed_done → verified` 完整链」— 仅 fixture 成立。** 断言已在
+   `tests/test_live_handoff.py:180`，本机由 fixture 链等价覆盖。
+3. **live 路径的审批前提未实测**：MCP 工具面没有 `approval_token`（api.md），所以 live 运行必须有人先在 Dashboard
+   把审批模式置手动，或先把 `pending_approvals()` 里的请求批掉。文档与测试都按此写，但没有真实往返记录。
+
+### 契约问题与限制（需双人评审；冻结文件未被单方面修改）
+
+- **「审批门」在文档与 S2 实现之间表征不一致。** `docs/agent.md` 第 3 步与状态语义表把人工审批写成
+  `awaiting_approval`（并注明「S2 实测补全特征」），但适配器缺 token 时是抛
+  `AdapterError(approval_required)`，`Engine.submit` 把它记成 `state="failed"` + `error.code`；
+  `awaiting_approval` 只能来自尚未实测的 DOM 特征（S2 未达成项 4）。`handoff()` 两种都拦
+  （异常 → `_awaiting_human`；状态 → 同样停），`test_without_the_human_token_the_task_waits_and_nothing_is_verified`
+  把**当前真实语义**（failed + 待审批队列非空）固化在断言里。G1 实测后请二选一统一，不要靠猜。
+- **`store.py` 没有迁移顺序表**：`set_task_state` 只校验 `state ∈ TASK_STATES` 与 `verified` 的 actor，
+  任何角色都能写一条 `submitted → claimed_done`；`task_transitions.evidence_id` 是 `NOT NULL` 但无外键，
+  可以写任意字符串。本阶段靠「`verified` 词只由 verifier 写」兜住交付判据，但审计链的完整性（顺序 +
+  证据可解析）建议在 S4-b 之前补断言或补校验。
+- **verifier 只看未提交变更。** `changed_files(repo, since_rev)` 已同时返回 `committed_since`，但
+  `allow_files` 判定对「agent 模式里 Trae 自己 commit」的场景依赖调用方传对 `since_rev`。
+  chat-only（本项目默认）不受影响；放开 agent 模式前必须先定这条。
+- **`handoff()` 需要 store 句柄才能写 `verified`**，`docs/api.md` 没有 verify 端点（设计如此：
+  `verified` 只能 verifier 写）。因此规划侧 Agent 要么与控制平面同进程、要么走 REST 之外的私有信道；
+  S4-b 的 Dashboard 若要做「一键重跑验收」，需要新增端点并评审。
+- **验收命令的退出码无法区分「测试通过」与「没有测试可跑」。** `node --test` 在 spec 被删后仍返回 0，
+  所以演示配方、live 用例与 fixture 断言都显式要求 spec 存在。这是通用风险，不只是 demo 的坑。
+- **`examples/demo-app` 的断言是静态 HTML 文本匹配**，不跑浏览器，验的是实现形态而非运行时行为。
+- **「测试仓库或 git worktree」目前只做到目录级隔离。** PRD §9 工作区隔离与 dev-prompts 全阶段共享约束的
+  隔离纪律都要求 live 任务跑在测试仓库或 worktree 里；`prepare_workspace()` 落实了「独立 git 仓库 + 带 remote
+  即拒绝 + 非空非仓库目录即拒绝」，但用的是复制目录 + `git init`，不是 worktree，也没有 OS 级沙箱。
+  要严格按字面执行就得指定一个基线仓库/分支，请在评审时定这条由谁提供。
+- **`_resolve_node()` 的兜底是 `"node"`。** `shutil.which` 失败时返回字面量，命令会以 `FileNotFoundError`
+  → `test_error` 收场（判据仍是「未 verified」，安全方向正确）。本机实测一律显式传 `--node`。
+
+### 环境（本阶段新增）
+
+Node 便携版 `C:/Users/lenovo/tools/node/node.exe`（v24.22.3）用于真实 `node --test` 验收；
+演示工作区默认落在 `%TEMP%/guibridge-demo-workspace`，seed 提交用逐命令 `-c user.name/-c user.email`，
+不触碰任何 git 配置。

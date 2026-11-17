@@ -11,8 +11,19 @@
       <label>
         密码
         <input :type="showPassword ? 'text' : 'password'" v-model="password" />
+        <button
+          id="toggle-password"
+          data-testid="toggle-password"
+          type="button"
+          :aria-pressed="showPassword"
+          :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+          @click="showPassword = !showPassword"
+        >{{ showPassword ? '隐藏' : '显示' }}</button>
       </label>
-      <!-- S3 演示任务：为上面的密码输入框新增显示/隐藏切换按钮，并补充测试 -->
+      <!-- S3 演示任务：为上面的密码输入框新增显示/隐藏切换按钮，并补充测试。
+           这里保留已完成的实现，离线演示才有可核对的参照；live 演示前只删本按钮
+           （连同 data-testid 那个 <button> 元素）并提交，tests/ 里的验收用例必须留着，
+           否则 node --test 空转返回 0，「verified」就变成自证。 -->
     </div>
     <script>
       Vue.createApp({
