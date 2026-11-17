@@ -80,7 +80,7 @@ python -X utf8 tests/bench/bench.py --iterations 10
 - Live 测试仅限 chat 模式；agent 模式改码/长任务与审批菜单自动化在 3.6.13 上未获授权/不可用（F10）。
 - Dashboard 通过既有 REST/SSE 契约展示快照 id，不内嵌截图文件（避免证据外泄）。
 - 基准为 fixture 模拟，未调用视觉模型；主题切换/异常弹窗场景未评测。
-- Phase 1 已完成 E1–E6 主实验与 P0 增补（E1c 前台对照、E2 停留曲线、微信 PID 扫描、Trae 授权 live）；DPI 变更未执行（会打断用户会话），E2 仅覆盖实测 57–138 ms（<50 ms 漏检率未量化），Trae live 仅限授权的一次 Chat 无害消息、agent 模式未验证，`docs/experiments/background-control.md` 第 10、11 节已标注保留项。
+- Phase 1 已完成 E1–E6 主实验与 P0 增补（E1c 前台对照、E2 停留曲线、微信 PID 扫描、Trae 授权 live）；DPI 变更未执行（会打断用户会话）；`dwell_limit.py` 快注入探针实测停留低至约 8.9 ms、25/25 检出（<2 ms 理论盲区未覆盖）；Trae live 仅限授权的一次 Chat 无害消息、agent 模式未验证，`docs/experiments/background-control.md` 第 10–12 节已标注保留项。
 - 演示站点与录屏尚未发布（需用户确认公开发布）。
 
 

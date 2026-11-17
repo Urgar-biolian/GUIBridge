@@ -100,7 +100,7 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 ### 4.3 采样限制
 
-FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报；<50 ms 的切换尚未覆盖（`quick_foreground` 开销使请求 20 ms 实际落到约 57 ms）。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
+FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报。后续 `src/probe/dwell_limit.py` 用更快注入（线程输入一次性附着 + 裸 `SetForegroundWindow`）把实测停留压到约 8.9 ms，0/5/10/20/50 ms 各 5 次共 25/25 轮询与钩子均检出、0 外部输入污染——说明此前 ~57 ms 下限是 `quick_foreground` 开销而非 FocusGuard 极限。**<2 ms 的切换仍未覆盖**（2 ms 采样的理论盲区）。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
 
 ## 5. 核心能力 C：AI IDE 语义适配器（Trae）
 
@@ -216,7 +216,7 @@ class ActionResult:
 ## 10. 开放问题
 
 1. ~~ctypes Win32 标准控件经 MSAA→UIA 桥的 pattern 可用性需 E1 实测~~ 已实测：Invoke/Value/Toggle/Text 均可用（E1/E1b/E1c），无需切换备选靶应用。
-2. FocusGuard 漏检率与采样频率的关系已部分量化：事件钩子补捉轮询漏掉的瞬时切换（E1c），E2 停留曲线覆盖 57–138 ms；<50 ms 仍待量化。
+2. ~~FocusGuard 漏检率与采样频率的关系需量化~~ 已部分量化：事件钩子补捉轮询漏掉的瞬时切换（E1c）；`dwell_limit.py` 快注入实测停留低至约 8.9 ms，25/25 轮询+钩子检出、0 污染；<2 ms 理论盲区仍待量化。
 3. Trae 版本升级后的选择器漂移由既有 heal 流程覆盖，需 Phase 2 复验。
 4. 新契约需 B 线 approve 后才能从“草案”转为冻结（见第 11 节评审包）。
 
@@ -248,6 +248,7 @@ class ActionResult:
 ### 11.3 实测依据索引
 
 - 基线 run `20261117T082451Z`、增补 run `20261117T090104Z`：`docs/experiments/background-control.md` 第 7、11 节。
+- 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）。
 - 四态分类单测：`tests/test_phase1_classification.py`（11 例）——含 `detect_unexpected_focus_switch` 聚合逻辑：轮询漏记、仅事件钩子捕获的瞬时切换仍判为干扰（E1c 发现的可执行证据）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 代码提交：`4665ab8`（P0 实验改进）。

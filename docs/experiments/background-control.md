@@ -194,7 +194,7 @@ E4 遮挡试验（`external_input=false`）给出了同样的方向：UIA Invoke
 
 - 靶应用是自建 ctypes Win32 程序，不是 Trae/微信等第三方应用；结论不能直接外推到自绘或 Electron 界面。
 - 9/9 焦点切换发生在 UIA 调用窗口内且无外部输入，但仍未进一步区分是 UIA provider、MSAA 桥接还是窗口管理器的行为。
-- FocusGuard 以 2 ms 采样，可能漏掉更短的前台切换；增补 run 的 E1c 中轮询漏掉 3 次瞬时切换，但 `SetWinEventHook` 事件钩子 9/9 全部捕获。E2 停留曲线只覆盖实测约 57–138 ms，<50 ms 未覆盖。
+- FocusGuard 以 2 ms 采样，可能漏掉更短的前台切换；增补 run 的 E1c 中轮询漏掉 3 次瞬时切换，但 `SetWinEventHook` 事件钩子 9/9 全部捕获。E2 停留曲线覆盖实测约 57–138 ms；第 12 节快注入探针进一步把实测停留压到约 8.9 ms 且 25/25 检出，限制收窄为 <2 ms 理论盲区未覆盖。
 - `GetLastInputInfo` 是会话级时间戳，不能识别输入来自哪个进程；`external_input_during_window=true` 只表示“窗口内有输入事件”。
 - 光标位移是动作窗口内的最大轴向位移；真实鼠标移动会造成污染。`20261117T082611Z` 因窗口内有真实鼠标输入被弃用，不以该运行的数字下结论。
 - E4 的 DPI 变更未执行；主题切换、异常弹窗未覆盖。
@@ -249,3 +249,23 @@ E4 遮挡试验（`external_input=false`）给出了同样的方向：UIA Invoke
 - 读回：T+3s/T+6s `running=true`，T+9s `running=false`、send 按钮 disabled；会话文本出现该提问与回复 `OK`。`messages_sent=1`。
 - 副作用核查：发送前后 `git status --short` 仅含本线代码改动，Trae 未对工作区做任何编辑；模式为 Chat、未触发工具执行。
 - 边界：仅一条无害消息、仅 Chat 模式；未验证 agent 模式、批量发送、随机端口托管启动。
+
+## 12. 短停留检测限探针（`dwell_limit.py`，run `20261117T091848Z`）
+
+E2 的 ~57 ms 下限来自 `quick_foreground` 每次调用都付 `ShowWindow`/`BringWindowToTop`/附着开销，并非 FocusGuard 的极限。为量化更短切换的检出能力，新增自包含探针 `src/probe/dwell_limit.py`：线程输入一次性附着到目标与遮挡窗线程、`AllowSetForegroundWindow(ASFW_ANY)`，动作仅用裸 `SetForegroundWindow` 切换，请求停留 0/5/10/20/50 ms 各 5 次。仅触碰自建靶窗口与遮挡窗，不发送聊天消息、不交互用户应用。原始数据 `var/experiments/20261117T091848Z/dwell_limit.json`（gitignore）。
+
+| 请求停留 | 轮询检出 | 钩子检出 | 实测停留 (ms) | 外部输入污染 |
+|---|---|---|---|---|
+| 0 ms ×5 | 5/5 | 5/5 | 46.1 / 12.9 / 8.9 / 10.5 / 44.0 | 0/5 |
+| 5 ms ×5 | 5/5 | 5/5 | 54.3 / 44.5 / 42.5 / 53.3 / 47.7 | 0/5 |
+| 10 ms ×5 | 5/5 | 5/5 | 30.9 / 56.4 / 47.7 / 49.5 / 64.6 | 0/5 |
+| 20 ms ×5 | 5/5 | 5/5 | 30.1 / 26.9 / 58.6 / 57.5 / 64.2 | 0/5 |
+| 50 ms ×5 | 5/5 | 5/5 | 62.0 / 63.0 / 58.4 / 58.0 / 99.7 | 0/5 |
+
+结论：
+
+- 25/25 试验全部检出（轮询 25/25、钩子 25/25），0 外部输入污染（`clean=25/25`）。
+- 实测最短停留约 **8.9 ms**（`min_actual_dwell_ms=8.9`，`min_hook_dwell_ms=8.9`），仍被 2 ms 轮询与事件钩子同时捕获。
+- 因此前第 10 节“<50 ms 未覆盖”的限制已收窄为“**<2 ms 未覆盖**”：2 ms 采样存在理论盲区，本轮未观察到漏检，但不能外推为“任意短切换（含 <2 ms）必检出”。
+- 实测停留由事件记录时间戳（`time.time()`）推算，含 Python 分发延迟；真实前台停留可能更短，检出结论以“记录到的停留”为准。
+- 复跑命令：`python -X utf8 src/probe/dwell_limit.py`。
