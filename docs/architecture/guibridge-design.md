@@ -100,7 +100,7 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 ### 4.3 采样限制
 
-FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报。后续 `src/probe/dwell_limit.py` 用更快注入（线程输入一次性附着 + 裸 `SetForegroundWindow`）把实测停留压到约 8.9 ms，0/5/10/20/50 ms 各 5 次共 25/25 轮询与钩子均检出、0 外部输入污染——说明此前 ~57 ms 下限是 `quick_foreground` 开销而非 FocusGuard 极限。**<2 ms 的切换仍未覆盖**（2 ms 采样的理论盲区）。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
+FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报。后续 `src/probe/dwell_limit.py` 用更快注入（线程输入一次性附着 + 裸 `SetForegroundWindow`）把实测停留压到约 8.9 ms，0/5/10/20/50 ms 各 5 次共 25/25 轮询与钩子均检出、0 外部输入污染——说明此前 ~57 ms 下限是 `quick_foreground` 开销而非 FocusGuard 极限。**<2 ms 的切换仍未覆盖**（2 ms 采样的理论盲区）。大样本复核（`src/probe/focusguard_reliability.py`，run `20261117T093120Z`）：30 静默负例误报 0/30、15 注入正例（~100 ms）检出 15/15（轮询与钩子均 15/15），强化 E2 小样本结论。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
 
 ## 5. 核心能力 C：AI IDE 语义适配器（Trae）
 
@@ -257,4 +257,5 @@ class ActionResult:
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
+- FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。

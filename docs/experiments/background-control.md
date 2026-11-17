@@ -284,3 +284,15 @@ E2 的 ~57 ms 下限来自 `quick_foreground` 每次调用都付 `ShowWindow`/`B
 - 据此把能力表 `trae × get_task_status` 与 `trae × read_task_result` 的 `app_protocol` 风险从 `unknown` 收窄为实测 `none`，可在 `STRICT_NO_INTERFERENCE` 下未批准放行（只读路径）。
 - **`send_task` 的发送点击未被本探针覆盖**，其风险仍为 `unknown`，需在用户另行授权 live 发送时用 FocusGuard 包裹测量；不得由只读路径的 `none` 外推到发送点击。
 - 复跑命令：`python -X utf8 src/probe/trae_cdp_focus.py`（需 Trae 运行且 CDP 9222 可读）。
+
+## 14. FocusGuard 大样本可靠性（`focusguard_reliability.py`，run `20261117T093120Z`）
+
+E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本偏小。新增探针 `src/probe/focusguard_reliability.py` 把样本扩大：30 个静默负例 + 15 个注入焦点切换正例（请求停留 100 ms），全部针对受控原生靶窗口，每次前等待输入静默；不交互 Trae/微信、不发送消息。原始数据 `var/experiments/20261117T093120Z/focusguard_reliability.json`（gitignore）。
+
+| 指标 | 结果 |
+|---|---|
+| 负例 | 30/30 清洁（无外部输入），误报 0/30，误报率 0.0 |
+| 正例 | 15/15 清洁，检出 15/15（轮询 15/15、钩子 15/15），检出率 1.0 |
+| 目标恢复 | 15/15 |
+
+结论：在约 100 ms 停留与静默环境下，FocusGuard 的误报率与检出率以更大样本（30 负例 / 15 正例）复核仍为 0.0 / 1.0，强化了 E2 的小样本结论。限制不变：仅覆盖该停留时长与静默条件；<2 ms 瞬时切换的理论盲区见第 12 节；外部输入污染窗口会被剔除（本轮 0 个）。复跑命令：`python -X utf8 src/probe/focusguard_reliability.py`。
