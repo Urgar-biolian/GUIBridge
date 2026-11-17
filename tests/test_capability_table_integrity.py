@@ -5,8 +5,11 @@ Draft layer pending B-line approval."""
 
 import yaml
 
-from packages.routing.capability import Channel, OperationImpact
+from packages.routing.capability import Channel, InterferenceRisk, OperationImpact
 from packages.routing.capability_table import DEFAULT_TABLE, load_capability_table
+
+
+_DEFINITE_RISKS = {r.value for r in InterferenceRisk if r is not InterferenceRisk.UNKNOWN}
 
 
 def _raw_entries():
@@ -25,13 +28,16 @@ def test_supported_unknown_risk_has_documented_measurement_gap():
                 )
 
 
-def test_logical_only_requires_evidence():
+def test_definite_risk_requires_evidence():
+    """Principle 4: every definite risk claim (none/logical_only/focus_switch/
+    physical_input) must be backed by measurement evidence, not assumed. Only
+    UNKNOWN is exempt (it surfaces a gap, guarded separately)."""
     for entry in _raw_entries():
         for name, spec in (entry.get("channels") or {}).items():
-            if spec.get("supported") and spec.get("risk") == "logical_only":
+            if spec.get("supported") and spec.get("risk") in _DEFINITE_RISKS:
                 assert entry.get("evidence"), (
-                    f"{entry['app']}.{entry['operation']} channel {name} assumes "
-                    "logical_only without measurement evidence"
+                    f"{entry['app']}.{entry['operation']} channel {name} claims "
+                    f"risk={spec.get('risk')} without measurement evidence"
                 )
 
 
