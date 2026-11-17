@@ -134,7 +134,7 @@ def _classify(run: FocusRun, verified: bool, error: str | None, channel: Channel
     return classify(run, verified, error, channel)
 
 
-def action_record(run: FocusRun, verified: bool, evidence: dict, error: str | None = None, channel: Channel = Channel.UIA, risk: InterferenceRisk = InterferenceRisk.LOGICAL_ONLY):
+def action_record(run: FocusRun, verified: bool, evidence: dict, error: str | None = None, channel: Channel = Channel.UIA, risk: InterferenceRisk = InterferenceRisk.FOCUS_SWITCH):
     state = _classify(run, verified, error, channel)
     evidence = dict(evidence)
     evidence["cursor_displacement"] = run.cursor_displacement

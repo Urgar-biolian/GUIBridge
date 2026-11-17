@@ -107,7 +107,7 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 **表述纪律**：`SUCCESS_NO_INTERFERENCE_OBSERVED` 只表示“未观察到”，不能表述为“绝对无干扰”。文档与 UI 必须保留该限定。
 
-**分类映射（`classify()`）**：`error` 非空 → `FAILED`；`verified=True` → 两种成功态（按通道与干扰信号细分）；`verified=False` 且无 `error` → `UNCONFIRMED`。早期实现把“未确认成功”一律归 `FAILED`，会使 `UNCONFIRMED` 不可达、原则 6 的未确认分支形同虚设，且把“未确认”误报为“确定失败”；现已修正为保守映射（缺正面确认 ≠ 确定失败）。含单测 `tests/test_phase1_classification.py`。另：`src/probe/uia_exec.py` 的 `ActionResult.risk` 曾硬编码 `LOGICAL_ONLY`，与本机靶应用实测 `FOCUS_SWITCH`（E1b/E1c）矛盾，已改为 `FOCUS_SWITCH`；历史 run 为冻结证据不追溯改写，后续复跑按实测风险报告。
+**分类映射（`classify()`）**：`error` 非空 → `FAILED`；`verified=True` → 两种成功态（按通道与干扰信号细分）；`verified=False` 且无 `error` → `UNCONFIRMED`。早期实现把“未确认成功”一律归 `FAILED`，会使 `UNCONFIRMED` 不可达、原则 6 的未确认分支形同虚设，且把“未确认”误报为“确定失败”；现已修正为保守映射（缺正面确认 ≠ 确定失败）。含单测 `tests/test_phase1_classification.py`。另：`src/probe/uia_exec.py` 的 `ActionResult.risk` 曾硬编码 `LOGICAL_ONLY`，与本机靶应用实测 `FOCUS_SWITCH`（E1b/E1c）矛盾，已改为 `FOCUS_SWITCH`；`run_experiments.action_record` 的默认风险同样由 `LOGICAL_ONLY` 改为 `FOCUS_SWITCH`（与其默认 UIA 通道一致）。修正经 run `20261117T100205Z` 端到端实测确认（3/3 `focus_switch`）；历史 run 为冻结证据不追溯改写，后续复跑按实测风险报告。
 
 **重试约束落地**：原则 6（非幂等未确认操作禁止自动重试）由草案 `packages/focusguard/retry_policy.py` 的 `decide_retry(state, idempotent, attempts, max_attempts)` 强制：`UNCONFIRMED`/`FAILED` 且非幂等一律 `allow_retry=False` 且 `requires_approval=True`；幂等操作仅在预算内可重试，预算耗尽转人工审批；两种成功态不重试。该约束在 Phase 2 接入执行器前为独立草案，含单测 `tests/test_retry_policy.py`（11 例）。
 
@@ -282,6 +282,7 @@ class ActionResult:
 - 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（4 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
+- 分类/风险修正实测验证 run `20261117T100205Z`：`src/probe/verify_classify.py`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`（修正后非 `LOGICAL_ONLY`）、`state=success_with_interference`、`effect_verified=True`，端到端确认四态分类与实测风险报告（原始 JSON 入 gitignored `var/experiments/`）。
 - 代码提交：`4665ab8`（P0 实验改进）。
 
 ### 11.4 Phase 2 集成就绪性与契约差异（只读审计，未改冻结模块）
