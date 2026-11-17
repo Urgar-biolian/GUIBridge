@@ -32,3 +32,33 @@ def test_refuses_live_write_without_authorization():
 def test_fixed_message_is_harmless_ok_request():
     mod = _load_module()
     assert mod.FIXED_MESSAGE == "请只回复 OK 两个字母，不要执行任何其他操作。"
+
+
+def test_authorized_without_project_path_aborts():
+    proc = subprocess.run(
+        [sys.executable, str(PROBE), "--authorize-live-write"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 2
+    assert "--project-path" in proc.stdout
+    assert "No message was sent" not in proc.stdout  # past the refuse gate, but aborted pre-send
+
+
+def test_authorized_non_git_project_path_aborts(tmp_path):
+    nongit = tmp_path / "nongit"
+    nongit.mkdir()
+    proc = subprocess.run(
+        [sys.executable, str(PROBE), "--authorize-live-write", "--project-path", str(nongit)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 2
+    assert "git repo" in proc.stdout
+
+
+def test_is_git_repo_helper(tmp_path):
+    mod = _load_module()
+    nongit = tmp_path / "nongit"
+    nongit.mkdir()
+    assert mod._is_git_repo(str(nongit)) is False
+    repo_root = Path(__file__).resolve().parents[1]
+    assert mod._is_git_repo(str(repo_root)) is True

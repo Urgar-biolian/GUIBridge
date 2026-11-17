@@ -10,8 +10,12 @@ Run with --authorize-live-write ONLY after the user has explicitly authorized a
 one-off harmless Chat send. Chat mode only; agent mode is never exercised (it may
 auto-edit files / run long tasks). The fixed message asks Trae to reply "OK" and
 do nothing else. --project-path must point to an ISOLATED demo workspace, never a
-real user project; the probe verifies zero workspace change after the send.
-Writes var/experiments/<run_id>/trae_send_focus.json (gitignored).
+real user project; the probe verifies zero workspace change after the send. Two
+live-path guards make that check meaningful: --project-path must be a git repo
+(a non-git dir yields a false [] == [] "unchanged"), and the running Trae window
+title must contain the project basename (so the send and the zero-change check
+target the SAME workspace; mismatch refuses). Writes
+var/experiments/<run_id>/trae_send_focus.json (gitignored).
 
 Status: instrument dev-complete; the live measurement itself is PENDING R5
 authorization and has not been run. The refusal gate is the only path verified
@@ -50,6 +54,14 @@ def _git_changed_files(project_path: str) -> list[str]:
     return [line[3:] for line in proc.stdout.splitlines() if line.strip()]
 
 
+def _is_git_repo(project_path: str) -> bool:
+    proc = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Gated R5 send_task focus measurement")
     parser.add_argument(
@@ -74,6 +86,10 @@ def main() -> int:
         print("ABORT: --project-path (isolated demo workspace) is required for a live send")
         return 2
     project_path = str(Path(args.project_path).resolve())
+    if not _is_git_repo(project_path):
+        print("ABORT: --project-path must be a git repo so the zero-change check is meaningful")
+        print("A non-git directory yields [] == [] (a false 'unchanged'); refuse instead.")
+        return 2
     before_files = _git_changed_files(project_path)
 
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -84,10 +100,15 @@ def main() -> int:
     if trae_hwnd is None:
         print("ABORT: Trae top-level window not found")
         return 2
+    title = wh.window_title(trae_hwnd)
+    if Path(project_path).name not in title:
+        print(f"ABORT: running Trae workspace does not match --project-path ({title!r})")
+        print("The send and the zero-change check must target the SAME workspace; refuse on mismatch.")
+        return 2
     guard = Win32FocusGuard(trae_hwnd)
     store = EventStore(":memory:")
     adapter = TraeAdapter(port=PORT, store=store)
-    print(f"trae_hwnd={trae_hwnd} title={wh.window_title(trae_hwnd)!r} project={project_path}")
+    print(f"trae_hwnd={trae_hwnd} title={title!r} project={project_path}")
 
     wh.wait_for_quiescence(min_idle_ms=500, timeout=4.0)
 
