@@ -252,6 +252,7 @@ class ActionResult:
 | 实测能力表 + 加载器 | `packages/routing/capabilities.draft.yaml`、`capability_table.py` | 草案（含单测） |
 | 重试策略（原则 6 落地） | `packages/focusguard/retry_policy.py`、第 4.2 节 | 草案（含单测） |
 | 操作影响维度 + 审批门（原则 7 落地） | `packages/routing/capability.py`、`policy.py`、`router.py`、第 3.6 节 | 草案（含单测） |
+| 四态→冻结信封桥接（集成候选） | `packages/focusguard/legacy_bridge.py`、第 11.4 节 | 草案（含单测，未接入冻结模块） |
 
 ### 11.2 B 线 approve 检查项
 
@@ -280,6 +281,7 @@ class ActionResult:
 - 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
 - 草案契约组合单测：`tests/test_draft_contract_integration.py`（5 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 与 `UNCONFIRMED` 非幂等均禁重试。证明路由→分类→重试三草案契约可组合。
 - 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（4 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
+- 冻结信封桥接单测：`tests/test_legacy_bridge.py`（8 例）——四态→`success`/`verified`/`error_code` 映射、干扰标记与风险透传，并显式锁定 `UNCONFIRMED` 与 `FAILED` 在冻结两态布尔下不可区分（仅保留的 `state` 可分离）。把 11.4 集成差异 1/2 落为可执行候选，未接入冻结模块、未改 `api.md`。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 分类/风险修正实测验证 run `20261117T100205Z`：`src/probe/verify_classify.py`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`（修正后非 `LOGICAL_ONLY`）、`state=success_with_interference`、`effect_verified=True`，端到端确认四态分类与实测风险报告（原始 JSON 入 gitignored `var/experiments/`）。
@@ -289,7 +291,7 @@ class ActionResult:
 
 对冻结契约（`semantic/element.py`、`mcp_gateway/server.py` 的 Engine Protocol/TOOL_SPECS、`execution/actions.py`、`execution/safety.py`）与新草案层做只读比对，列出 Phase 2 接入前必须裁决/桥接的差异。**本节仅为评审输入，不代表已接入；G0 未过、冻结模块未改。**
 
-1. **两套 `ActionResult` 不兼容**：冻结 `semantic.element.ActionResult` 为两态布尔（`success`/`verified` + `before/after_snapshot_id` + `error_code` + `evidence: list[str]`）；草案 `focusguard.outcome.ActionResult` 为四态（`state` + `channel` + `risk` + `effect_verified` + `evidence: dict` + 内联 `FocusSnapshot`）。桥接需把四态映射回冻结信封，但**冻结 `success` 布尔无法区分 `FAILED` 与 `UNCONFIRMED`**——两者都落 `success=False/verified=False`，原则 6 的“未确认”语义在 MCP 边界丢失。裁决项：是否扩展 `api.md` 信封增加 `state`/`risk` 字段（属契约改动，需双人 approve），否则 UNCONFIRMED 只能在引擎内部保留、对外退化为失败。
+1. **两套 `ActionResult` 不兼容**：冻结 `semantic.element.ActionResult` 为两态布尔（`success`/`verified` + `before/after_snapshot_id` + `error_code` + `evidence: list[str]`）；草案 `focusguard.outcome.ActionResult` 为四态（`state` + `channel` + `risk` + `effect_verified` + `evidence: dict` + 内联 `FocusSnapshot`）。桥接需把四态映射回冻结信封，但**冻结 `success` 布尔无法区分 `FAILED` 与 `UNCONFIRMED`**——两者都落 `success=False/verified=False`，原则 6 的“未确认”语义在 MCP 边界丢失。裁决项：是否扩展 `api.md` 信封增加 `state`/`risk` 字段（属契约改动，需双人 approve），否则 UNCONFIRMED 只能在引擎内部保留、对外退化为失败。候选桥接已落为草案 `packages/focusguard/legacy_bridge.py`（`to_legacy_envelope`，含 8 例单测显式锁定该退化），未接入冻结模块、未引入新错误码，供评审评估。
 2. **四态→冻结映射（建议）**：`SUCCESS_NO_INTERFERENCE_OBSERVED`/`SUCCESS_WITH_INTERFERENCE` → `success=True, verified=True`（干扰信息需新信封字段承载）；`FAILED` → `success=False, error_code` 置位；`UNCONFIRMED` → `success=False, verified=False` 且**必须**另带 `state=unconfirmed` 标记，避免与确定失败混淆。
 3. **证据形态**：冻结 `evidence` 为快照 id 列表（`store.add_snapshot`），草案为 dict + 内联 `FocusSnapshot`。Phase 2 须把 `FocusSnapshot`/干扰证据经 `store` 落库并以 id 引用，方能塞进冻结 `evidence: list[str]`。
 4. **审批双门叠加**：冻结 `SafetyGate.check_action(approval_token)` 颁令/校验高影响令牌；草案 `operation_requires_approval(impact)` 只做“是否需审批”标记、不发令牌。Phase 2 须把路由 `requires_approval=True`（含 `HIGH` 影响）接到 `SafetyGate` 的令牌校验，二者叠加而非替代。
