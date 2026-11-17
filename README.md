@@ -48,6 +48,7 @@
 | [docs/security.md](docs/security.md) | 安全边界：白名单/审批/CDP/隐私/环境限制，含「尚未落实」 |
 | [docs/benchmark.md](docs/benchmark.md) | A/B/C 评测表（当前未实测，逐行标了阻塞原因） |
 | [docs/dev-status.md](docs/dev-status.md) | 阶段实现状态：出口条件逐条判定与未达成项 |
+| [docs/review-r1-r6.md](docs/review-r1-r6.md) | B 线对 A 线 R1–R6 契约裁决、Phase 1 事实核对意见与合并预案（待双人 approve） |
 
 ## 快速开始
 
