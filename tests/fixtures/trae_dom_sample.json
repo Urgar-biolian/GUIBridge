@@ -1,0 +1,33 @@
+[
+  {
+    "tag": "DIV", "role": "textbox", "aria": null, "placeholder": null,
+    "contenteditable": "true", "testid": null, "cls": "chat-input-v2-input-box-editable",
+    "id": "", "disabled": false, "rect": [226, 784, 613, 824], "text": ""
+  },
+  {
+    "tag": "BUTTON", "role": null, "aria": "添加文件及更多", "placeholder": null,
+    "contenteditable": null, "testid": null, "cls": "compactToolbarTrigger",
+    "id": "", "disabled": false, "rect": [220, 852, 244, 876], "text": ""
+  },
+  {
+    "tag": "BUTTON", "role": null, "aria": "自动审批", "placeholder": null,
+    "contenteditable": null, "testid": null, "cls": "permissionModeTrigger-_O2E0F",
+    "id": ":icube-modules-ai-chat-v2-paner6:", "disabled": false, "rect": [250, 852, 274, 876], "text": ""
+  },
+  {
+    "tag": "BUTTON", "role": "combobox", "aria": null, "placeholder": null,
+    "contenteditable": null, "testid": null, "cls": "icd-model-select-trigger",
+    "id": "", "disabled": false, "rect": [446, 852, 557, 876], "text": "deepseek-flash"
+  },
+  {
+    "tag": "BUTTON", "role": null, "aria": null, "placeholder": null,
+    "contenteditable": null, "testid": null, "cls": "chat-input-v2-send-button disabled",
+    "id": "", "disabled": true, "rect": [595, 852, 619, 876], "text": ""
+  },
+  {
+    "tag": "A", "role": "button", "aria": "新建任务 (Ctrl+Alt+N)", "placeholder": null,
+    "contenteditable": null, "testid": "ai-chat-create-new-session",
+    "cls": "action-label codicon codicon-icube-NewChat", "id": "", "disabled": false,
+    "rect": [535, 8, 559, 32], "text": ""
+  }
+]
