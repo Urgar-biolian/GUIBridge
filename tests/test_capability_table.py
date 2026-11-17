@@ -54,3 +54,12 @@ def test_trae_app_protocol_unknown_risk_not_auto_allowed():
     assert cap.risk_of(Channel.APP_PROTOCOL) is InterferenceRisk.UNKNOWN
     decision = StaticRouter().route(cap, InterferencePolicy.FOREGROUND_ALLOWED, approved=True)
     assert decision.channel is None
+
+
+def test_trae_read_interfaces_measured_none_allowed_under_strict():
+    for operation in ("get_task_status", "read_task_result"):
+        cap = _table()[("trae", operation)]
+        assert cap.risk_of(Channel.APP_PROTOCOL) is InterferenceRisk.NONE
+        decision = StaticRouter().route(cap, InterferencePolicy.STRICT_NO_INTERFERENCE)
+        assert decision.channel is Channel.APP_PROTOCOL
+        assert decision.requires_approval is False

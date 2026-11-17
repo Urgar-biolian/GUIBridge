@@ -125,6 +125,8 @@ FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHoo
 
 现有实现：`packages/adapters/trae/adapter.py`、`packages/execution/verifier.py`、`packages/engine.py`。Phase 2 将 `verify_code_changes` 正式接入适配器与 MCP 表面。
 
+焦点干扰实测（run `20261117T092712Z`，`src/probe/trae_cdp_focus.py`）：只读 CDP 路径（`get_task_status`/`read_task_result`）经 FocusGuard 包裹 5/5 光标 0、无前台切换、无外部输入，实测风险 `none`，已写入能力表草案。`send_task` 的发送点击未覆盖，风险仍 `unknown`，需授权 live 测量；不得由只读 `none` 外推。
+
 ## 6. 数据契约（草案，待 B 线 approve）
 
 ```python
@@ -244,7 +246,7 @@ class ActionResult:
 - [ ] 确认 E2 停留曲线仅覆盖 57–138 ms，<50 ms 漏检率未量化，不得外推为“任意瞬时切换可检出”。
 - [ ] 确认 Trae 主通道为 `APP_PROTOCOL`（loopback CDP），live 证据仅限授权的一次 Chat 无害消息；agent 模式默认手动审批。
 - [ ] 确认微信负例（可见窗口仅 4 个 UIA 框架节点）作为“不支持后台语义操作”的证据。
-- [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae CDP 在 FocusGuard 实测前保持 `unknown`（不假设 `logical_only`），并认领 Phase 2 测量任务。
+- [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae 只读接口已实测 `none`（run `20261117T092712Z`），而 `send_task` 发送点击仍 `unknown`（不假设 `logical_only`），并认领授权 live 测量任务。
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
 
 ### 11.3 实测依据索引
@@ -253,5 +255,6 @@ class ActionResult:
 - 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）。
 - 四态分类单测：`tests/test_phase1_classification.py`（11 例）——含 `detect_unexpected_focus_switch` 聚合逻辑：轮询漏记、仅事件钩子捕获的瞬时切换仍判为干扰（E1c 发现的可执行证据）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
-- 实测能力表单测：`tests/test_capability_table.py`（6 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae CDP unknown 不自动放行。
+- 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
+- Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。

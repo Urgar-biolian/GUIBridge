@@ -269,3 +269,18 @@ E2 的 ~57 ms 下限来自 `quick_foreground` 每次调用都付 `ShowWindow`/`B
 - 因此前第 10 节“<50 ms 未覆盖”的限制已收窄为“**<2 ms 未覆盖**”：2 ms 采样存在理论盲区，本轮未观察到漏检，但不能外推为“任意短切换（含 <2 ms）必检出”。
 - 实测停留由事件记录时间戳（`time.time()`）推算，含 Python 分发延迟；真实前台停留可能更短，检出结论以“记录到的停留”为准。
 - 复跑命令：`python -X utf8 src/probe/dwell_limit.py`。
+
+## 13. Trae 只读 CDP 焦点干扰实测（`trae_cdp_focus.py`，run `20261117T092712Z`）
+
+为收窄能力表中 Trae CDP 的 `unknown` 风险，新增探针 `src/probe/trae_cdp_focus.py`：用 `Win32FocusGuard` 包裹一次**只读** CDP `Runtime.evaluate`（`cdp_readonly_eval.mjs`，仅读 `document.title` 与会话 innerText 长度，**无点击、无输入、无消息**），目标窗口为 Trae 主窗口（hwnd 2887220，标题 `Agui - TRAE`）。5 次试验，每次前等待输入静默。原始数据 `var/experiments/20261117T092712Z/trae_cdp_focus.json`（gitignore）。
+
+| 试验 | CDP 读成功 | 光标位移 | 焦点切换 | 外部输入 |
+|---|---|---|---|---|
+| 0–4 | 5/5 | 0,0,0,0,0 | 5/5 false | 5/5 false |
+
+结论：
+
+- 只读 CDP 逻辑访问 5/5 无光标位移、无前台切换、无外部输入污染（`clean=5/5`、`no_interference=5/5`），实测风险 `none`。
+- 据此把能力表 `trae × get_task_status` 与 `trae × read_task_result` 的 `app_protocol` 风险从 `unknown` 收窄为实测 `none`，可在 `STRICT_NO_INTERFERENCE` 下未批准放行（只读路径）。
+- **`send_task` 的发送点击未被本探针覆盖**，其风险仍为 `unknown`，需在用户另行授权 live 发送时用 FocusGuard 包裹测量；不得由只读路径的 `none` 外推到发送点击。
+- 复跑命令：`python -X utf8 src/probe/trae_cdp_focus.py`（需 Trae 运行且 CDP 9222 可读）。

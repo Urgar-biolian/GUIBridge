@@ -67,3 +67,4 @@
 - 微信负例刷新：按 PID + `EnumWindows` 找到可见窗口“微信”（`Qt51514QWindowIcon`），UIA 仅 4 节点（Window/2×Pane/TitleBar），无 Edit/Button；自绘聊天语义不可经 UIA 获取。
 - 原生靶应用：E1b 后台 9/9 光标 0 但 9/9 焦点切换；E1c 前台起步 9/9 仍出现瞬时焦点切换（`external_input=false`），其中 3 次 2 ms 轮询漏记、事件钩子 9/9 捕获；E2 停留曲线实测 57–138 ms，轮询/钩子均 9/9 检出、误报 0/3。
 - 结论与验收映射详见 `docs/experiments/background-control.md` 第 11 节；四态分类单测见 `tests/test_phase1_classification.py`。
+- 只读 CDP 焦点实测（run `20261117T092712Z`，`trae_cdp_focus.py` + `cdp_readonly_eval.mjs`）：FocusGuard 包裹只读 `Runtime.evaluate` 5/5 光标 0、无前台切换、无外部输入 → 只读接口（get_task_status/read_task_result）实测风险 `none`；send_task 发送点击未覆盖、仍 `unknown`。短停留检测限（run `20261117T091848Z`，`dwell_limit.py`）实测停留低至 8.9 ms、25/25 检出。详见实验报告第 12、13 节。
