@@ -32,7 +32,7 @@ GUIBridge 是面向 Windows 的通用桌面应用语义控制与跨 Agent 协作
 |---|---|---|---|
 | `OFFICIAL_API` | 应用官方 API / SDK | 凭据、服务可用 | `NONE` |
 | `CLI` | 应用官方 CLI | 版本支持、可非交互 | `NONE` 或 `LOGICAL_ONLY` |
-| `UIA` | Windows UI Automation pattern 调用 | 控件暴露 Invoke/Value/Toggle 等 pattern | `LOGICAL_ONLY`（不移动物理输入） |
+| `UIA` | Windows UI Automation pattern 调用 | 控件暴露 Invoke/Value/Toggle 等 pattern | 不移动物理输入；焦点风险需实测（见 3.5，本机靶应用为 `FOCUS_SWITCH`） |
 | `APP_PROTOCOL` | 应用允许的专用协议，如 Electron CDP（仅 loopback） | 应用可托管启动/已开调试端口 | `NONE` |
 | `OCR_VISION` | 截图识别定位 | 目标可见 | 仅定位；若配合输入则继承输入风险 |
 | `FOREGROUND_INPUT` | SendInput / 物理级模拟 | 目标前台、可用输入 | `PHYSICAL_INPUT` |
@@ -62,14 +62,25 @@ GUIBridge 是面向 Windows 的通用桌面应用语义控制与跨 Agent 协作
 3. 按策略过滤；需审批且未批准则跳过。
 4. 返回首个可用通道及其 fallbacks；无可用通道返回 `channel=None` 并给出原因（含负例证据，如“微信 4.x UIA 无节点”）。
 
-Phase 1 不做动态学习或在线探测；能力表由 `src/probe/capability_scan.py` 生成并人工复核。
+Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experiments.py` 的 E5 扫描输出并人工复核。
+
+### 3.5 Phase 1 实测修正（2026-11-17）
+
+`docs/experiments/background-control.md` 的 E1b 对受控 Win32 靶应用做了 3 种 pattern × 3 个后台窗口的隔离试验：
+
+- 9/9 效果回读成功，9/9 光标位移为 0；
+- 9/9 前台在动作窗口内切换到目标，9/9 未检测到外部输入；
+- 因此该应用的 UIA 风险应声明为 `FOCUS_SWITCH`，不能默认 `LOGICAL_ONLY`。
+
+设计修正：能力表按“应用 × 操作 × 控件 × 目标前后台状态”实测风险；`STRICT_NO_INTERFERENCE` 下未批准的 UIA 焦点切换仍应被拒。UIA 的“光标零位移”与“无焦点干扰”必须分开报告，不得用前者替代后者。
 
 ## 4. 核心能力 B：FocusGuard
 
 ### 4.1 监测信号
 
 - 前台窗口 HWND（动作前后 + `EVENT_SYSTEM_FOREGROUND` 事件）。
-- 用户鼠标位置（动作前后采样）。
+- 用户鼠标位置（动作前后采样 + 动作窗口内轨迹）。
+- 系统最后输入年龄（`GetLastInputInfo`），用于标记窗口内是否存在外部输入，避免把用户操作归因给自动化动作。
 - 目标窗口是否处于激活状态。
 - 自动化动作是否引起非预期焦点切换。
 - 目标操作是否真正生效（控件状态 / 文本 / 业务后置条件）。
@@ -87,7 +98,7 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/capability_s
 
 ### 4.3 采样限制
 
-FocusGuard 采用动作前后快照 + 前台事件钩子，不保证捕获两次采样之间的瞬时切换。实验需包含“注入已知焦点切换”的检出率测试，并报告漏检可能。
+FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样，不保证捕获两次采样之间的瞬时切换。Phase 1 E2 在约 120 ms 的注入切换上得到 3/3 检出、0/3 误报；更短切换的漏检率尚未量化。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
 
 ## 5. 核心能力 C：AI IDE 语义适配器（Trae）
 

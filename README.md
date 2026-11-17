@@ -15,7 +15,8 @@
 - ✅ S3 交接与独立验证（A 线）：`packages/execution/verifier.py` 仅信 git 变更范围与测试退出码；`examples/handoff_demo.py` 在隔离 worktree 中跑通 `submitted→running→claimed_done→verified`（模拟执行器）；回复文本恒标 untrusted、不执行。**受安全约束（仅 chat 模式 live、禁止 agent 模式 live），Trae 真实改码的 live 端到端未执行**，用模拟链验证编排与验证器
 - ✅ S4-b Dashboard / 审批 UI（按整体完成度补齐）：Vue3+TS+Vite；任务与迁移时间线、SSE 事件回放（含 before/after snapshot id）、定位器注册表与 pending heal patches 审核、一次性审批授予；浏览器实测健康检查/列表/授权 token 展示均通过，`vue-tsc` + `vite build` 通过
 - ✅ S5 评测（A 线）：`tests/bench/bench.py` A/B/C fixture 基准（7 场景 ×10，原始 JSON 入库）、`docs/benchmark.md` 实测与分析；架构/安全文档定稿
-- ✅ Phase 0（独立研发任务书对齐）：架构/竞品/原创性/实验四份文档骨架、`probe → src/probe` 迁移、Router/FocusGuard/UIA 执行契约草案、原生靶应用骨架；新契约待 B 线 approve，Phase 1 实验尚未执行
+- ✅ Phase 0（独立研发任务书对齐）：架构/竞品/原创性/实验四份文档骨架、`probe → src/probe` 迁移、Router/FocusGuard/UIA 执行契约草案、原生靶应用骨架；新契约待 B 线 approve
+- ✅ Phase 1 E1–E6 实验（A 线，`30378b2`）：受控 Win32 靶应用 3×3 后台 UIA 试验 9/9 光标零位移但 9/9 焦点切换（外部输入 0/9）；FocusGuard 检出 3/3、误报 0/3；遮挡下 UIA 成功而坐标点击命中遮挡窗；Trae CDP 只读复跑，未发送聊天消息；DPI 与 live Trae 提交未执行
 - ⬜ S5 参赛交付：演示站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）；当前 Dashboard 可本地运行演示
 
 ## 双人分工（本仓库执行约定）
@@ -47,7 +48,7 @@
 | [docs/architecture/guibridge-design.md](docs/architecture/guibridge-design.md) | 任务书对齐架构：Router / FocusGuard / Trae 契约（草案） |
 | [docs/research/competitor-analysis.md](docs/research/competitor-analysis.md) | agent-desktop 公开能力对比（仅公开资料） |
 | [docs/research/originality-log.md](docs/research/originality-log.md) | 原创性与第三方依赖许可证记录 |
-| [docs/experiments/background-control.md](docs/experiments/background-control.md) | Phase 1 后台控制实验方案与结果（结果待执行） |
+| [docs/experiments/background-control.md](docs/experiments/background-control.md) | Phase 1 E1–E6 后台控制实验：环境、结果、四态、验收与限制 |
 | [docs/api.md](docs/api.md) | MCP 8 工具 + 本地 REST/SSE 规范与错误码 |
 | [docs/sql.md](docs/sql.md) | SQLite 事件存储设计（DDL：packages/events/schema.sql） |
 | [docs/agent.md](docs/agent.md) | 跨 Agent 交接协议、状态语义、提示注入防护 |
@@ -79,7 +80,7 @@ python -X utf8 tests/bench/bench.py --iterations 10
 - Live 测试仅限 chat 模式；agent 模式改码/长任务与审批菜单自动化在 3.6.13 上未获授权/不可用（F10）。
 - Dashboard 通过既有 REST/SSE 契约展示快照 id，不内嵌截图文件（避免证据外泄）。
 - 基准为 fixture 模拟，未调用视觉模型；主题切换/异常弹窗场景未评测。
-- Phase 1 原生 UIA / FocusGuard / 干扰对照实验尚未执行，`docs/experiments/background-control.md` 结果为空，禁止引用为已完成数据。
+- Phase 1 已完成 E1–E6 主实验；DPI 变更未执行（会打断用户会话），微信窗口本次未找到，Trae 仅只读复跑、未发送聊天消息，`docs/experiments/background-control.md` 已标注保留项。
 - 演示站点与录屏尚未发布（需用户确认公开发布）。
 
 

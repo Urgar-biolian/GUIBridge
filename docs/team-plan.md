@@ -21,6 +21,7 @@
 | S4-b Dashboard | 完成（降级为可选展示） | `1ecf972`；浏览器实测通过 |
 | S5 基准与提交 | 完成（DOM fixture 基准） | `0f1a4d5`；A/B/C 原始 JSON + benchmark 文档；站点/录屏未发布 |
 | Phase 0 任务书对齐 | 完成（G0 待 B 线 approve） | `2665660`；四份文档 + `src/probe` 迁移 + 契约草案；102 测试通过 / 1 跳过 |
+| Phase 1 E1–E6 实验 | 完成（部分验收有保留） | `30378b2`；runner + 原始 JSON；权威 run `20261117T082451Z`；E1b 9/9 光标零位移但 9/9 焦点切换；E4 DPI 未执行；Trae 仅只读复跑 |
 
 ## 2. 任务书对齐后的范围调整
 
@@ -51,18 +52,21 @@
 - `src/probe/native_test_app.py` 骨架。
 - 门 G0：文档与契约草案完成，B 线确认 D1–D7 与契约范围。
 
-### Phase 1（11/18–22，A 线主导）
+### Phase 1（实验已执行，2026-11-17；门 G1 待 B 线复核）
 
-1. E1 靶应用 + UIA Invoke/Value/Toggle + 状态回读。
-2. E2 FocusGuard 快照 + 前台事件 + 检出率。
-3. E3 UIA vs SendInput 对照。
-4. E4 遮挡/移动/缩放/DPI。
-5. E5 能力扫描与负例（含微信 4.x、Trae UIA）。
-6. E6 Trae 探针复跑，更新证据。
-7. 可重复 runner + 原始 JSON + 填写 `background-control.md`。
-8. 原创性日志与竞品分析定稿（仅公开资料）。
+1. ✅ E1 靶应用 + UIA Invoke/Value/Toggle + 状态回读。
+2. ✅ E1b 隔离后台 pattern 试验（3×3），用于分离窗口创建/外部输入污染。
+3. ✅ E2 FocusGuard 快照 + 前台事件 + 检出率（3/3 检出，0/3 误报）。
+4. ✅ E3 UIA vs SendInput 对照。
+5. ⚠️ E4 遮挡/移动/缩放完成；DPI 未执行（会打断用户会话）。
+6. ⚠️ E5 能力扫描：原生靶应用与 Trae UIA 完成；微信进程在但窗口未找到，沿用历史负例。
+7. ⚠️ E6 Trae 只读复跑完成（CDP 2 targets）；未发送聊天消息，未新增 live 提交证据。
+8. ✅ 可重复 runner + 原始 JSON + 已填写 `background-control.md`。
+9. ⚠️ 原创性日志与竞品分析已有骨架，待最终定稿（仅公开资料）。
 
-门 G1（11/22）：六条验收均有真实数据、可复跑、无伪造；未达标项显式标注。
+关键实测：E1b 9/9 效果回读成功、光标位移 0，但 9/9 把前台切到目标且无外部输入；因此该应用 UIA 风险按 `FOCUS_SWITCH` 记录，`LOGICAL_ONLY` 不能作为 UIA 默认值。
+
+门 G1（11/22）：六条验收均有真实数据、可复跑、无伪造；当前第 5 条为只读部分满足，未达标项已在实验文档显式标注。
 
 ### Phase 2（11/23–27，整合）
 
