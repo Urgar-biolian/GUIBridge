@@ -223,3 +223,47 @@ Node 便携版 `C:/Users/lenovo/tools/node/node.exe`（v24.22.3）用于真实 `
   `export PATH="/c/Users/lenovo/tools/node:$PATH"`。
 - Vite 6 dev server 只监听 IPv6 `localhost`：`http://localhost:5173/` 可访问，`http://127.0.0.1:5173/` 连接被拒；
   `/api` 代理目标仍是 `127.0.0.1:8765`。`node_modules/`、`dist/` 已在 .gitignore 中，未入库。
+
+---
+
+## S5-b 文档定稿与提交检查
+
+**命令：`.venv/Scripts/python.exe -m pytest -m "not live" -q` → 175 passed, 5 deselected；
+`npm run build` → vue-tsc 无类型错误 + vite 构建通过**（本阶段只改文档，代码未动，重跑只为确认「文档描述的行为」还是那个行为）。
+
+### 定稿内容
+
+| 文档 | 本阶段做了什么 |
+|---|---|
+| `docs/architecture.md` | 加了「实现现状」表（哪些模块真在跑、哪些还是 `NotImplementedError("S1"/"S4")`、各归 A/B 哪条线）与「一次任务的真实数据路径」图；关键决策补 6–10 条（状态以事件存储为准、回放证据复制进事件而非扩 REST 面、Dashboard 不新增控制通道、审批凭据按一次性能力设计、文件改动不由 GUI 通道假装完成）。 |
+| `docs/security.md` | 每条控制补实现位置 + 覆盖它的测试名，新增「尚未落实」4 条（保留期未接线、`awaiting_approval` 无签名导致的语义差、模拟通道没有真实审批 UI、token 出库后本机不再管控）。 |
+| `docs/benchmark.md` | 明确 **未实测**：逐场景标阻塞门（G1/G2 或未验证项），说明为什么不用模拟通道凑数字；列出可直接复用的部分（可追溯率由事件存储保证、C 组判据即 `verifier.py`）与 G1 之后的运行命令。 |
+| `README.md` | 进度改为逐阶段实况；快速开始换成实测过的命令（`python apps/desktop-agent/main.py --mode simulated --db … --port 8765`、`--mcp`、`handoff_demo.py --workspace`、`npm run dev`）；已知限制重排为「今天就会碰到」的 11 条。 |
+
+### 提交前检查（逐条实测，不是清单打卡）
+
+- 跟踪文件里无 `.env` / `*.sqlite3` / `node_modules` / `dist` / `__pycache__` / 图片：
+  `git ls-files | grep -Ei "\.env|sqlite3$|node_modules|__pycache__|\.png$"` → 空。
+- `probe/` 只入库脚本与报告，截图与 UIA dump 由 `.gitignore`（`probe/*.png`、`probe/uia_dump.json`）挡住；
+  `grep -E "[A-Za-z]:[\\/](Users|home)" probe/*.log probe/*.mjs` → 空，公开交付不含本机绝对路径与用户名。
+- 审批 token 明文未进任何跟踪文件（只在本机 loopback 响应与临时目录里出现过）；库里存的是 SHA-256 摘要。
+- 提交信息符合 `S<阶段>: <动词短语>`：`c72f5b8 S2: …` / `a7bb349 S3: …` / `53d66e2 S4-b: …`。
+- 未 push 远端：按隔离纪律只做本地提交，push 与 PR 由人来触发。
+- 未擅自更新 git 配置：提交用逐命令 `-c user.name=… -c user.email=…`。
+
+### 未达成的出口条件（S5 的 6 项里，本阶段只做了 5、6）
+
+1. **`tests/bench/` 不存在，评测无数据。** dev-prompts S5 第 1 项按 README 分工属 S5-a（A 线）：
+   A/B/C 三组都要真实窗口，且 `packages/perception/` 未实现；B 线不自建一套统计口径去产出无法复现的数字。
+2. **演示站点未部署（S5 第 3 项）。** 两个原因叠加：现在能展示的只有模拟通道，把它发到公网等于用
+   fixture 冒充 Trae 实测；且发布是对外可见动作，需要明确授权。真要发，先过 G1，再按 sites-hosting 流程走，
+   并复核「站点不含本机执行器、调试端口、`probe/` 与证据目录」。
+3. **录屏未产出（S5 第 4 项）。** 「规划→交接→执行→独立验证」可以用 Dashboard 现状录，但「窗口变化重执行」
+   这条没有真实窗口可录；只录前半段会被读成完整闭环，所以没录。
+4. **live 出口条件全部未执行**，与 S2–S4 相同：无真实 Trae，gate G1 未过。
+
+### 需要人来定的三件事（文档里已标出，未擅自实现）
+
+- `EventStore.prune()` 的接线点（启动时清理 / 显式命令 / 定时任务）——涉及删审计数据，属于策略决定。
+- `awaiting_approval` 的语义统一：等 G1 补上 DOM 签名后改状态机，还是保留 `failed`+`approval_required` 并改 docs/agent.md。
+- 若 S5 交付形态需要原图像素，得给 `docs/api.md` 加读快照的端点（契约冻结清单 #5，需双人评审）。

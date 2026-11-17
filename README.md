@@ -9,7 +9,12 @@
 
 - ✅ S0 技术探针：GO，路线修正为 CDP 优先；提交→状态→读回闭环实测成功（[probe/PROBE_REPORT.md](probe/PROBE_REPORT.md)）
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
-- ⬜ S1–S5 开发：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
+- ✅ S2（B 线）：Trae 适配器状态机、事件存储、固定 8 工具 MCP、loopback 控制平面（REST 13 端点 + SSE）
+- ✅ S3（B 线）：独立验证器 + 跨 Agent 交接编排（`examples/handoff_demo.py`）
+- ✅ S4-b（B 线）：Dashboard 四页（任务时间线 / 事件回放 / 定位器与人审 / 审批与窗口）
+- ⬜ S1、S4-a（A 线）：CDP/UIA/OCR 感知通道与自修复重定位仍是骨架 → 集成门 G1 未过，**当前只有 fixture 驱动的模拟通道**
+- ⬜ S5：评测未实测（见 [docs/benchmark.md](docs/benchmark.md)），站点与录屏待提交阶段
+- 每阶段「做到了什么、没做到什么」一律记在 [docs/dev-status.md](docs/dev-status.md)，不拿界面显示完成当交付
 
 ## 双人分工（本仓库执行约定）
 
@@ -40,16 +45,35 @@
 | [docs/api.md](docs/api.md) | MCP 8 工具 + 本地 REST/SSE 规范与错误码 |
 | [docs/sql.md](docs/sql.md) | SQLite 事件存储设计（DDL：packages/events/schema.sql） |
 | [docs/agent.md](docs/agent.md) | 跨 Agent 交接协议、状态语义、提示注入防护 |
-| [docs/security.md](docs/security.md) | 安全边界：白名单/审批/CDP/隐私/环境限制 |
-| [docs/benchmark.md](docs/benchmark.md) | A/B/C 评测模板（S5 填实测） |
+| [docs/security.md](docs/security.md) | 安全边界：白名单/审批/CDP/隐私/环境限制，含「尚未落实」 |
+| [docs/benchmark.md](docs/benchmark.md) | A/B/C 评测表（当前未实测，逐行标了阻塞原因） |
+| [docs/dev-status.md](docs/dev-status.md) | 阶段实现状态：出口条件逐条判定与未达成项 |
 
 ## 快速开始
 
 ```bash
 python -m pip install -e ".[dev]"
-pytest -m "not live"          # 单测；live 测试需本机 Trae 且显式运行
-(cd apps/desktop-agent && python -m uvicorn main:app --port 8765)
-(cd apps/dashboard && npm install && npm run dev)
+pytest -m "not live"                 # 175 passed, 5 deselected（live 需本机真实 Trae）
+
+# 控制平面（loopback only；--mode simulated 用 fixture 通道，不需要打开 Trae）
+python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --port 8765
+
+# Dashboard（需要 Node 18+；只读展示 + 审批，不能提交任务）
+cd apps/dashboard && npm install && npm run dev     # http://localhost:5173，/api 反代到 8765
+```
+
+给 Agent 用同一套能力，把 stdio 服务换成 REST：
+
+```bash
+python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --mcp
+```
+
+八个工具（`gui.*` / `trae.*`）走标准 MCP stdio，每次调用都写审计行；接法与错误码见 [docs/api.md](docs/api.md)。
+演示「规划侧交接 → 执行侧自称完成 → 独立验证器判定」这条闭环：
+
+```bash
+# 目标目录若不存在，会从 examples/demo-app 复制出一个独立 git 仓库；带 remote 的目录一律拒绝
+python examples/handoff_demo.py --workspace C:/tmp/guibridge-demo-workspace --node node
 ```
 
 ## 目录
@@ -73,4 +97,19 @@ tests/                  单测 + live 标记集成测试
 - 仅支持交互式桌面会话；锁屏/UAC/远程桌面断开不保证可用。
 - Trae 定位器基线为 3.6.13；其他版本需重跑探针。
 - CDP 通道要求托管启动目标应用（仅 loopback 随机端口）。
+- **没有真实 Trae 通道。** `packages/perception/` 与 `packages/semantic/` 仍是骨架，控制平面跑的是
+  `tests/fixtures/trae/dom_ide_idle.json` 驱动的模拟通道；Dashboard 顶部常驻黄条说明这一点。
+  模拟通道的元素、会话文本、状态都不是 Trae 实测。
+- **模拟通道不改文件、不产截图。** 演示工作区的文件改动由 `examples/handoff_demo.py` 用 git 完成，
+  所以「verified」证明的是变更范围 + 验收命令 + 事件写入权限，不证明「GUI 真的动了手」；
+  快照 `image_path` 为 NULL，界面写「无截图」而不是放占位图。
+- **需要人在 Trae 里点审批时看不出来。** `awaiting_approval` 没有实测 DOM 签名（PROBE_REPORT 未验证项 3），
+  detector 宁可报 `unknown` 也不猜；当前表现为 `failed` + `approval_required`，语义差记在 docs/security.md。
+- **Dashboard 只能看和批，不能提交任务。** 这是 dev-prompts S4 的约束（不新增控制通道），不是漏做。
+- **事件与截图的保留期只是配置项。** `EventStore(retention_days=30)` 与 `prune()` 都在，但没有调用方。
+- **评测数字为空。** A/B/C 三组全部依赖真实窗口，逐行阻塞原因见 [docs/benchmark.md](docs/benchmark.md)。
+- 5 条 `@pytest.mark.live` 用例默认 deselect，未在 G1 之前伪称通过。
+- CDP 通道要求托管启动目标应用（仅 loopback 随机端口），实现见 `apps/desktop-agent/launch.py`。
+- 仅支持交互式桌面会话；锁屏 / UAC 安全桌面 / 远程桌面断开 / 多显示器 DPI 变化可能导致失效（报 unknown 并停止）。
+- Trae 定位器基线为 3.6.13；其他版本需重跑探针。
 - 骨架中 `NotImplementedError("Sx")` 为阶段占位，对应 dev-prompts 的实现任务。
