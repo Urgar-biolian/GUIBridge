@@ -14,14 +14,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .capability import Capability, Channel
+from .capability import WRITE_OPERATIONS, Capability, Channel
 from .policy import InterferencePolicy
 from .router import ChannelDecision, StaticRouter
-
-# State-changing operations: OCR may locate for them but never execute them.
-WRITE_OPERATIONS = frozenset(
-    {"invoke", "set_value", "toggle", "send_message", "send_task"}
-)
 
 
 def is_write_operation(operation: str) -> bool:

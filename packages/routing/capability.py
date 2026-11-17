@@ -37,6 +37,14 @@ class OperationImpact(str, Enum):
     HIGH = "high"
 
 
+# State-changing operations (principle 3): OCR/vision may locate for these but
+# never execute them. Single source of truth shared by the routing-layer guard
+# (ocr_guard) and the capability-table data-layer integrity guard.
+WRITE_OPERATIONS = frozenset(
+    {"invoke", "set_value", "toggle", "send_message", "send_task"}
+)
+
+
 @dataclass(frozen=True)
 class Capability:
     """Measured capability for one app x operation. Unknown channels stay absent."""

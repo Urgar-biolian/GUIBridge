@@ -12,6 +12,7 @@ from packages.routing import (
     InterferenceRisk,
     StaticRouter,
 )
+from packages.routing.capability import WRITE_OPERATIONS
 from packages.routing.ocr_guard import is_write_operation, route_ocr_aware
 
 
@@ -71,7 +72,7 @@ def test_non_ocr_write_unaffected():
 
 
 def test_is_write_operation():
-    for op in ("invoke", "set_value", "toggle", "send_message", "send_task"):
+    for op in WRITE_OPERATIONS:
         assert is_write_operation(op) is True
     for op in ("get_task_status", "read_task_result"):
         assert is_write_operation(op) is False

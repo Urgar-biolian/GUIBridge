@@ -5,7 +5,7 @@ Draft layer pending B-line approval."""
 
 import yaml
 
-from packages.routing.capability import Channel, InterferenceRisk, OperationImpact
+from packages.routing.capability import WRITE_OPERATIONS, Channel, InterferenceRisk, OperationImpact
 from packages.routing.capability_table import DEFAULT_TABLE, load_capability_table
 
 
@@ -53,16 +53,13 @@ def test_every_entry_parses_impact_and_idempotent():
         assert isinstance(cap.idempotent, bool)
 
 
-_WRITE_OPERATIONS = {"invoke", "set_value", "toggle", "send_message", "send_task"}
-
-
 def test_ocr_vision_not_a_background_execution_channel_for_writes():
     """Principle 3: OCR/vision is locate-only, never background input. A write
     operation must not declare OCR_VISION as a supported execution channel.
     Read/locate operations may legitimately use OCR with NONE risk; how the
     router should enforce this at selection time is B-line decision R6."""
     for cap in load_capability_table().values():
-        if cap.operation in _WRITE_OPERATIONS:
+        if cap.operation in WRITE_OPERATIONS:
             assert Channel.OCR_VISION not in cap.supported(), (
                 f"{cap.app}.{cap.operation} declares OCR_VISION as a background "
                 "execution channel; OCR is locate-only (principle 3)"
