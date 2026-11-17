@@ -285,6 +285,7 @@ class ActionResult:
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 分类/风险修正实测验证 run `20261117T100205Z`：`src/probe/verify_classify.py`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`（修正后非 `LOGICAL_ONLY`）、`state=success_with_interference`、`effect_verified=True`，端到端确认四态分类与实测风险报告（原始 JSON 入 gitignored `var/experiments/`）。
+- 草案契约链实测组合 run `20261117T101352Z`：`src/probe/verify_contract_chain.py`，受控靶应用三操作各跑完整草案链（能力表→`StaticRouter`→真实 UIA 执行→四态分类→`decide_retry`→`to_legacy_envelope`）。3/3：STRICT 未批准拒绝（`channel=None`）、STRICT 批准与 BALANCED 均选 UIA、实测 `risk=focus_switch`、`success_with_interference`、成功态不重试、冻结信封 `success=True`。把 11.3 的合成组合单测（`test_draft_contract_integration.py`）落到真实测量数据，证明路由→分类→重试→桥接四草案契约在实测下可组合（不接入冻结执行器；原始 JSON 入 gitignored `var/experiments/`）。
 - 代码提交：`4665ab8`（P0 实验改进）。
 
 ### 11.4 Phase 2 集成就绪性与契约差异（只读审计，未改冻结模块）
@@ -310,4 +311,4 @@ class ActionResult:
 - **D4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
 - **D5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
 
-**当前可执行证据**：195 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）；草案桥接/重试/影响门/完整性守护均有单测。D1–D4 为 B 线契约决策，D5 为用户授权决策；未决前不接入冻结模块。
+**当前可执行证据**：195 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）；草案桥接/重试/影响门/完整性守护均有单测。D1–D4 为 B 线契约决策，D5 为用户授权决策；未决前不接入冻结模块。
