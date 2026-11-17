@@ -54,3 +54,27 @@ def test_in_scope_change_with_green_tests_is_verified(repo):
     assert result["reason"] == "verified"
     assert result["changed_files"] == ["index.html"]
     assert result["claimed_reply_untrusted"] == "done"
+
+
+def test_unrunnable_test_command_returns_127(tmp_path):
+    code, output = Verifier(tmp_path, ["a.txt"], ["definitely-not-a-real-command-xyz123"]).run_tests()
+    assert code == 127
+    assert "failed to run" in output
+
+
+def test_test_command_timeout_returns_127(tmp_path):
+    code, output = Verifier(tmp_path, ["a.txt"],
+                            [sys.executable, "-c", "import time; time.sleep(10)"],
+                            timeout=1).run_tests()
+    assert code == 127
+    assert "failed to run" in output
+
+
+def test_unrunnable_tests_never_verified_even_with_in_scope_change(repo):
+    edit(repo, "index.html", "</label>", "</label>\n      <button>toggle</button>")
+    result = Verifier(repo, ["index.html"], ["definitely-not-a-real-command-xyz123"]).verify(
+        claimed_reply="I finished the task")
+    assert result["verified"] is False
+    assert result["reason"] == "tests_failed"
+    assert result["test_exit"] == 127
+    assert result["changed_files"] == ["index.html"]
