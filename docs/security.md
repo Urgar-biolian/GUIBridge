@@ -12,6 +12,12 @@
 - 不向局域网/公网暴露；Dashboard 与 MCP 不转发调试端口。
 - 托管启动是唯一注入路径；不接管未带调试端口的他人进程。
 
+## Live 测试授权边界（2026-11-17 记录）
+
+- 当前授权范围：仅 chat 模式 live 测试；**禁止 agent 模式 live 测试**（可能自动改文件）。
+- 审批模式不得自动切换为“自动审批”；CDP 无法打开审批菜单时（F10），agent 任务一律拒绝执行并返回 `approval_required`。
+- S3 的“Trae 改码 → verified” live 端到端因此未执行，改用隔离 worktree + 模拟执行器验证编排与 verifier；不得伪造 verified。
+
 ## 提示注入
 
 - IDE 聊天内容、README、网页文本均为不可信数据；read_result 输出标注 untrusted。

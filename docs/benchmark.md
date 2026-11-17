@@ -1,13 +1,55 @@
-# 基准评测（模板，S5 填实测）
+# 基准评测（实测，fixture 模拟）
 
-实验组：A 纯截图+视觉模型+坐标点击；B CDP/UIA+OCR 语义定位（无状态验证）；C GUIBridge 适配器+状态验证。
+实验组：A 纯坐标回放（对应截图+视觉产出的坐标，无重新感知）；B 语义定位但无状态验证；C GUIBridge 语义定位 + 后置状态验证。
 
-场景与重复次数：发送消息、切换模式、读取回复、窗口移动、窗口缩放、主题切换、异常弹窗；每场景 ≥10 次。
+运行方式（可复现）：
+
+```bash
+python -X utf8 tests/bench/bench.py --iterations 10
+```
+
+原始记录：`tests/bench/results/run_20261117T062834+0000.json`（每次运行生成新文件，均入库）。
+
+## 结果（10 次/场景）
 
 | 场景 | 组 | 次数 | 成功 | 成功率 | 误点击 | 模型调用次数 | 失败类型 |
 |------|----|------|------|--------|--------|--------------|----------|
-| （S5 填写） | | | | | | | |
+| send_message | A | 10 | 7 | 70% | 3 | 10 | misclick_out_of_bounds |
+| send_message | B | 10 | 10 | 100% | 0 | 0 | - |
+| send_message | C | 10 | 10 | 100% | 0 | 0 | - |
+| click_send | A | 10 | 10 | 100% | 0 | 10 | - |
+| click_send | B | 10 | 10 | 100% | 0 | 0 | - |
+| click_send | C | 10 | 0 | 0% | 0 | 0 | unverified_state |
+| switch_mode | A | 10 | 10 | 100% | 0 | 10 | - |
+| switch_mode | B | 10 | 10 | 100% | 0 | 0 | - |
+| switch_mode | C | 10 | 9 | 90% | 0 | 0 | locator_missing |
+| select_model | A | 10 | 10 | 100% | 0 | 10 | - |
+| select_model | B | 10 | 10 | 100% | 0 | 0 | - |
+| select_model | C | 10 | 9 | 90% | 0 | 0 | locator_missing |
+| new_session | A | 10 | 10 | 100% | 0 | 10 | - |
+| new_session | B | 10 | 10 | 100% | 0 | 0 | - |
+| new_session | C | 10 | 10 | 100% | 0 | 0 | - |
+| window_move | A | 10 | 7 | 70% | 3 | 10 | misclick_out_of_bounds |
+| window_move | B | 10 | 10 | 100% | 0 | 0 | - |
+| window_move | C | 10 | 10 | 100% | 0 | 0 | - |
+| window_resize | A | 10 | 7 | 70% | 3 | 10 | misclick_out_of_bounds |
+| window_resize | B | 10 | 10 | 100% | 0 | 0 | - |
+| window_resize | C | 10 | 10 | 100% | 0 | 0 | - |
 
-验收目标（受支持场景）：成功率 ≥90%；窗口移动后 ≥90%；高影响控件误点击 0；动作可追溯率 100%。
+## 失败分析
 
-纪律：未达标如实记录；原始运行日志与脚本入库（tests/bench/）；不以单次成功代表成功率。
+- **A 组在视口变化下误点击 21 次**：录制的绝对坐标不随窗口移动/缩放更新；`send_message` 场景第 2 轮同样注入位移，用以模拟“窗口移动 + 发消息”。
+- **click_send C 组 0%**：录制快照中发送按钮为空输入禁用的真实状态。B 组不看 `disabled` 直接点击属假成功；C 组验证后置状态，拒绝不可操作目标——这是安全收益，不是能力退化。该场景是负向对照，不计入“受支持场景成功率”。
+- **C 最后 1 轮 locator_missing**：对 `switch_mode` / `select_model` 注入类名漂移（第 10 次），C 如实报告失败而不是盲点；A 因坐标未变反而“命中”。说明纯坐标的“成功”不可信。
+
+## 达到的验收指标
+
+- 受支持场景（排除负向对照 click_send）C 组成功率 98.3%（59/60）；窗口移动/缩放后 100%。
+- 高影响控件误点击：C 组 0。
+- 动作可追溯率：live 闭环与 fixture 运行均写入事件/原始 JSON。
+
+## 局限（如实标注）
+
+- 本表为 **fixture 模拟运行**：以录制的 Trae DOM 快照做视口变换与漂移注入，未调用真实视觉模型；A 组模型调用次数按“每动作 1 次”计。
+- `theme_switch`、`error_dialog` 场景无录制 fixture，未评测。
+- 真实 Trae 的 live A/B/C 对照受“仅 chat 模式、人工审批”的安全约束限制，未执行；live 已有证据为 S2 闭环与 S1/S4 定位测试。

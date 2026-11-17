@@ -1,0 +1,1897 @@
+{
+  "ts": "2026-11-17T06:28:34+00:00",
+  "iterations": 10,
+  "mode": "fixture-simulation",
+  "results": [
+    {
+      "scenario": "send_message",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "send_message",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "click_send",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "unverified_state"
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "switch_mode",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "locator_missing"
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "select_model",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": false,
+      "failure": "locator_missing"
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "new_session",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_move",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 0,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 0,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 0,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 1,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 1,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 1,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 2,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 2,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 2,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 3,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 3,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 3,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 4,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 4,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 4,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 5,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 5,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 5,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 6,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 6,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 6,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 7,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 7,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 7,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 8,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 1,
+      "success": false,
+      "failure": "misclick_out_of_bounds"
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 8,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 8,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 9,
+      "group": "A",
+      "model_calls": 1,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 9,
+      "group": "B",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    },
+    {
+      "scenario": "window_resize",
+      "iteration": 9,
+      "group": "C",
+      "model_calls": 0,
+      "misclick": 0,
+      "success": true,
+      "failure": null
+    }
+  ]
+}
