@@ -11,7 +11,7 @@
 | PRD / 开发提示词 | ✅ 完成 | docs/PRD.md、docs/dev-prompts.md |
 | 项目骨架 | ✅ 完成 | 单测 4 通过；模块可导入；Dashboard 浏览器实测+构建通过 |
 | 契约与文档 | ✅ 完成 | element.py / Engine Protocol / locators.yaml / schema.sql / api.md |
-| S1 感知与语义引擎 | ⬜ 未开始 | dev-prompts S1 |
+| S1 感知与语义引擎 | ✅ 完成（11/17，早于 G1） | feat/a-perception `0e46c61`；单测 32 通过；live 只读定位 3 连过；融合冲突用例返回 conflict |
 | S2 适配器与 MCP | ⬜ 未开始 | dev-prompts S2 |
 | S3 交接与验证 | ⬜ 未开始 | dev-prompts S3 |
 | S4 自修复与 Dashboard | ⬜ 未开始 | dev-prompts S4 |
