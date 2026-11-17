@@ -42,6 +42,10 @@ user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
 user32.GetWindowTextLengthW.restype = ctypes.c_int
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetWindowTextW.restype = ctypes.c_int
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetClassNameW.restype = ctypes.c_int
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.restype = wintypes.BOOL
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -101,10 +105,66 @@ def ensure_foreground(hwnd: int, timeout: float = 2.0) -> bool:
             user32.AttachThreadInput(current_thread, target_thread, False)
 
 
+def quick_foreground(hwnd: int) -> int:
+    hwnd = int(hwnd)
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    current_thread = kernel32.GetCurrentThreadId()
+    attached = bool(user32.AttachThreadInput(current_thread, target_thread, True))
+    try:
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        return int(user32.GetForegroundWindow() or 0)
+    finally:
+        if attached:
+            user32.AttachThreadInput(current_thread, target_thread, False)
+
+
 def window_rect(hwnd: int) -> tuple[int, int, int, int]:
     rect = wintypes.RECT()
     user32.GetWindowRect(wintypes.HWND(int(hwnd)), ctypes.byref(rect))
     return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+
+
+def window_pid(hwnd: int) -> int:
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(wintypes.HWND(int(hwnd)), ctypes.byref(pid))
+    return int(pid.value)
+
+
+def window_title(hwnd: int) -> str:
+    length = user32.GetWindowTextLengthW(wintypes.HWND(int(hwnd)))
+    buf = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(wintypes.HWND(int(hwnd)), buf, length + 1)
+    return buf.value
+
+
+def window_class(hwnd: int) -> str:
+    buf = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(wintypes.HWND(int(hwnd)), buf, 256)
+    return buf.value
+
+
+def enum_top_level_windows() -> list[dict]:
+    windows: list[dict] = []
+
+    def callback(hwnd, _lparam):
+        handle = int(hwnd)
+        windows.append(
+            {
+                "hwnd": handle,
+                "pid": window_pid(handle),
+                "title": window_title(handle),
+                "class": window_class(handle),
+                "visible": bool(user32.IsWindowVisible(hwnd)),
+            }
+        )
+        return True
+
+    user32.EnumWindows(
+        ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(callback), 0
+    )
+    return windows
 
 
 def control_rect(parent_hwnd: int, control_id: int) -> tuple[int, int, int, int]:

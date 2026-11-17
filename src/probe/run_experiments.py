@@ -129,13 +129,9 @@ def process_running(name: str) -> bool:
 
 
 def _classify(run: FocusRun, verified: bool, error: str | None, channel: Channel) -> ResultState:
-    if error or not verified:
-        return ResultState.FAILED
-    if channel is Channel.FOREGROUND_INPUT:
-        return ResultState.SUCCESS_WITH_INTERFERENCE
-    if run.unexpected_focus_switch or run.cursor_displacement > 0:
-        return ResultState.SUCCESS_WITH_INTERFERENCE
-    return ResultState.SUCCESS_NO_INTERFERENCE_OBSERVED
+    from packages.focusguard.classify import classify
+
+    return classify(run, verified, error, channel)
 
 
 def action_record(run: FocusRun, verified: bool, evidence: dict, error: str | None = None, channel: Channel = Channel.UIA, risk: InterferenceRisk = InterferenceRisk.LOGICAL_ONLY):
@@ -143,6 +139,8 @@ def action_record(run: FocusRun, verified: bool, evidence: dict, error: str | No
     evidence = dict(evidence)
     evidence["cursor_displacement"] = run.cursor_displacement
     evidence["external_input_during_window"] = run.external_input_during_window
+    evidence["hook_foreground_events"] = [foreground for _, foreground in run.hook_foreground_events]
+    evidence["event_hook_active"] = run.event_hook_active
     if channel is Channel.FOREGROUND_INPUT:
         evidence["input_injected_by_action"] = True
     if error:
@@ -235,37 +233,170 @@ def experiment_e1_background(trials: int = 3) -> dict:
     return output
 
 
+def experiment_e1_foreground(trials: int = 3) -> dict:
+    tests = {
+        "invoke": lambda window, guard: ux.invoke_button(window, guard),
+        "value": lambda window, guard: ux.set_edit(window, guard, "fg-value"),
+        "toggle": lambda window, guard: ux.toggle_checkbox(window, guard),
+    }
+    output = {}
+    for name, action in tests.items():
+        procs = []
+        windows = []
+        runs = []
+        try:
+            for index in range(trials):
+                proc, hwnd = start_app_with_handle(x=660 + index * 12, y=520 + index * 12)
+                procs.append(proc)
+                windows.append((hwnd, auto.ControlFromHandle(hwnd)))
+            time.sleep(1.2)
+            for hwnd, window in windows:
+                activated = wh.ensure_foreground(hwnd)
+                quiet = wh.wait_for_quiescence()
+                foreground = int(wh.user32.GetForegroundWindow() or 0)
+                guard = Win32FocusGuard(hwnd)
+                result = action(window, guard)
+                runs.append(
+                    {
+                        "target_hwnd": hwnd,
+                        "foreground_at_start": foreground,
+                        "started_in_background": foreground != hwnd,
+                        "activated_before_action": activated,
+                        "quiescent_before_action": quiet,
+                        "result": jsonable(result),
+                    }
+                )
+        finally:
+            for proc in procs:
+                proc.terminate()
+        output[name] = runs
+    return output
+
+
+def process_pids(name: str) -> list[int]:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {name}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        pids = []
+        for line in (result.stdout or "").splitlines():
+            parts = [part.strip('"') for part in line.split('","')]
+            if len(parts) >= 2 and parts[0].lower() == name.lower():
+                try:
+                    pids.append(int(parts[1]))
+                except ValueError:
+                    continue
+        return pids
+    except Exception:
+        return []
+
+
+def scan_windows_by_process(name: str) -> dict:
+    pids = process_pids(name)
+    windows = [window for window in wh.enum_top_level_windows() if window["pid"] in pids]
+    visible = [window for window in windows if window["visible"]]
+    uia = []
+    for window in visible[:5]:
+        try:
+            control = auto.ControlFromHandle(window["hwnd"])
+            nodes = []
+            types = {}
+
+            def walk(ctrl, depth):
+                if len(nodes) >= 400 or depth > 5:
+                    return
+                try:
+                    nodes.append(ctrl.ControlTypeName)
+                    types[ctrl.ControlTypeName] = types.get(ctrl.ControlTypeName, 0) + 1
+                    for child in ctrl.GetChildren():
+                        walk(child, depth + 1)
+                except Exception:
+                    return
+
+            walk(control, 0)
+            uia.append(
+                {
+                    "hwnd": window["hwnd"],
+                    "title": window["title"],
+                    "class": window["class"],
+                    "node_count": len(nodes),
+                    "types": types,
+                    "has_edit": "EditControl" in types,
+                    "has_button": "ButtonControl" in types,
+                }
+            )
+        except Exception as exc:
+            uia.append({"hwnd": window["hwnd"], "error": repr(exc)})
+    return {
+        "process_running": bool(pids),
+        "pids": pids,
+        "window_count": len(windows),
+        "visible_window_count": len(visible),
+        "windows": windows[:20],
+        "uia_visible_windows": uia,
+        "note": "read-only EnumWindows + PID match; no messages sent" if windows else "no top-level window matched process PID",
+    }
+
+
 def experiment_e2(target_hwnd: int, guard: Win32FocusGuard) -> dict:
     tx, ty, tw, th = wh.window_rect(target_hwnd)
     screen_w = int(wh.user32.GetSystemMetrics(0))
     ox = min(tx + tw + 80, max(0, screen_w - 340))
-    occluder_proc = start_app(occluder=True, x=ox, y=ty, w=300, h=200, auto_close=90)
+    occluder_proc = start_app(occluder=True, x=ox, y=ty, w=300, h=200, auto_close=120)
     try:
         occluder = ux.find_window(OCCLUDER_TITLE, OCCLUDER_CLASS, timeout=8)
         if occluder is None:
             return {"error": "occluder window not found"}
         occluder_hwnd = int(occluder.NativeWindowHandle)
         positives = []
-        for _ in range(3):
-            wh.ensure_foreground(target_hwnd)
-            time.sleep(0.1)
-            activations = {}
+        dwell_curve = []
+        for dwell in (0.02, 0.05, 0.12):
+            bucket = []
+            for _ in range(3):
+                wh.ensure_foreground(target_hwnd)
+                time.sleep(0.1)
 
-            def disturb():
-                activations["occluder"] = wh.ensure_foreground(occluder_hwnd)
-                time.sleep(0.12)
-                activations["target"] = wh.ensure_foreground(target_hwnd)
-                time.sleep(0.12)
+                def disturb():
+                    wh.quick_foreground(occluder_hwnd)
+                    time.sleep(dwell)
+                    wh.quick_foreground(target_hwnd)
+                    time.sleep(0.05)
 
-            run, error = safe_action(guard, disturb)
-            positives.append(
-                {
-                    "detected": any(fg == occluder_hwnd for _, fg in run.foreground_events),
-                    "events": [fg for _, fg in run.foreground_events],
-                    "activations": activations,
+                run, error = safe_action(guard, disturb)
+                poll_hit = any(fg == occluder_hwnd for _, fg in run.foreground_events)
+                hook_hit = any(fg == occluder_hwnd for _, fg in run.hook_foreground_events)
+                combined = sorted(run.foreground_events + run.hook_foreground_events)
+                occ_ts = next((ts for ts, fg in combined if fg == occluder_hwnd), None)
+                tgt_ts = next((ts for ts, fg in combined if fg == target_hwnd and occ_ts is not None and ts > occ_ts), None)
+                actual_dwell_ms = round((tgt_ts - occ_ts) * 1000, 1) if occ_ts is not None and tgt_ts is not None else None
+                record = {
+                    "requested_dwell_ms": dwell * 1000,
+                    "actual_dwell_ms": actual_dwell_ms,
+                    "poll_detected": poll_hit,
+                    "hook_detected": hook_hit,
+                    "detected": poll_hit or hook_hit,
+                    "poll_events": [fg for _, fg in run.foreground_events],
+                    "hook_events": [fg for _, fg in run.hook_foreground_events],
+                    "event_hook_active": run.event_hook_active,
                     "start_foreground": run.before.foreground_hwnd,
                     "target_restored": run.after.foreground_hwnd == target_hwnd,
                     "error": error,
+                }
+                bucket.append(record)
+                positives.append(record)
+            dwell_curve.append(
+                {
+                    "requested_dwell_ms": dwell * 1000,
+                    "trials": len(bucket),
+                    "poll_detected": sum(1 for item in bucket if item["poll_detected"]),
+                    "hook_detected": sum(1 for item in bucket if item["hook_detected"]),
+                    "any_detected": sum(1 for item in bucket if item["detected"]),
+                    "actual_dwell_ms": [item["actual_dwell_ms"] for item in bucket],
                 }
             )
         negatives = []
@@ -275,6 +406,7 @@ def experiment_e2(target_hwnd: int, guard: Win32FocusGuard) -> dict:
                 {
                     "unexpected": run.unexpected_focus_switch,
                     "events": [fg for _, fg in run.foreground_events],
+                    "hook_events": [fg for _, fg in run.hook_foreground_events],
                     "error": error,
                 }
             )
@@ -282,7 +414,10 @@ def experiment_e2(target_hwnd: int, guard: Win32FocusGuard) -> dict:
             "occluder_hwnd": occluder_hwnd,
             "positives": positives,
             "negatives": negatives,
+            "dwell_curve": dwell_curve,
             "detected_rate": sum(1 for item in positives if item["detected"]) / len(positives),
+            "poll_detected_rate": sum(1 for item in positives if item["poll_detected"]) / len(positives),
+            "hook_detected_rate": sum(1 for item in positives if item["hook_detected"]) / len(positives),
             "false_positive_rate": sum(1 for item in negatives if item["unexpected"]) / len(negatives),
         }
     finally:
@@ -430,50 +565,6 @@ def experiment_e4(window, guard: Win32FocusGuard, target_hwnd: int, neutral_hwnd
     return results
 
 
-def scan_process_uia(process_name: str, max_depth: int = 6, max_nodes: int = 800) -> dict:
-    root = auto.GetRootControl()
-    for window in root.GetChildren():
-        try:
-            pid = window.ProcessId
-            name = auto.GetProcessName(pid) if hasattr(auto, "GetProcessName") else ""
-        except Exception:
-            continue
-        if name.lower() != process_name.lower():
-            continue
-        nodes = []
-        types = {}
-
-        def walk(control, depth: int) -> None:
-            if len(nodes) >= max_nodes or depth > max_depth:
-                return
-            try:
-                nodes.append(
-                    {
-                        "name": control.Name,
-                        "class": control.ClassName,
-                        "type": control.ControlTypeName,
-                        "automation_id": control.AutomationId,
-                    }
-                )
-                types[control.ControlTypeName] = types.get(control.ControlTypeName, 0) + 1
-                for child in control.GetChildren():
-                    walk(child, depth + 1)
-            except Exception:
-                return
-
-        walk(window, 0)
-        return {
-            "window_name": window.Name,
-            "window_class": window.ClassName,
-            "node_count": len(nodes),
-            "types": types,
-            "has_edit": any(node["type"] == "EditControl" for node in nodes),
-            "has_button": any(node["type"] == "ButtonControl" for node in nodes),
-            "sample_nodes": nodes[:40],
-        }
-    return {"error": "process window not found"}
-
-
 def experiment_e5(window) -> dict:
     native = {
         "app": "GUIBridge UIA Test Target",
@@ -521,7 +612,7 @@ def experiment_e5(window) -> dict:
     wechat = {"process_running": wechat_running}
     if wechat_running:
         try:
-            wechat.update(scan_process_uia("Weixin.exe"))
+            wechat.update(scan_windows_by_process("Weixin.exe"))
         except Exception as exc:
             wechat["scan_error"] = repr(exc)
     else:
@@ -606,6 +697,7 @@ def main() -> int:
         steps = [
             ("E1", lambda: experiment_e1(window, guard)),
             ("E1b", lambda: experiment_e1_background()),
+            ("E1c", lambda: experiment_e1_foreground()),
             ("E2", lambda: experiment_e2(target_hwnd, guard)),
             ("E3", lambda: experiment_e3(window, guard, target_hwnd)),
             ("E4", lambda: experiment_e4(window, guard, target_hwnd, neutral_hwnd)),
@@ -635,7 +727,19 @@ def main() -> int:
         },
         "e2": {
             "detected_rate": results["experiments"].get("E2", {}).get("detected_rate"),
+            "poll_detected_rate": results["experiments"].get("E2", {}).get("poll_detected_rate"),
+            "hook_detected_rate": results["experiments"].get("E2", {}).get("hook_detected_rate"),
             "false_positive_rate": results["experiments"].get("E2", {}).get("false_positive_rate"),
+            "dwell_curve": results["experiments"].get("E2", {}).get("dwell_curve"),
+        },
+        "e1c": {
+            name: {
+                "foreground_trials": sum(1 for run in runs if not run["started_in_background"]),
+                "trials": len(runs),
+                "states": [run["result"]["state"] for run in runs],
+                "cursor_displacement": [run["result"]["evidence"].get("cursor_displacement") for run in runs],
+            }
+            for name, runs in results["experiments"].get("E1c", {}).items()
         },
         "e1b": {
             name: {

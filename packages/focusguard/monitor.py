@@ -35,6 +35,40 @@ user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
 user32.GetLastInputInfo.restype = wintypes.BOOL
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel32.GetTickCount.restype = wintypes.DWORD
+kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+EVENT_SYSTEM_FOREGROUND = 0x0003
+WINEVENT_OUTOFCONTEXT = 0x0000
+WM_QUIT = 0x0012
+WinEventProc = ctypes.WINFUNCTYPE(
+    None,
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.HWND,
+    wintypes.LONG,
+    wintypes.LONG,
+    wintypes.DWORD,
+    wintypes.DWORD,
+)
+user32.SetWinEventHook.restype = wintypes.HANDLE
+user32.SetWinEventHook.argtypes = [
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.HMODULE,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.DWORD,
+]
+user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
+user32.UnhookWinEvent.restype = wintypes.BOOL
+user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+user32.GetMessageW.restype = wintypes.BOOL
+user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
+user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
+user32.DispatchMessageW.restype = ctypes.c_ssize_t
+user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.PostThreadMessageW.restype = wintypes.BOOL
 
 
 def _last_input_age_ms() -> float | None:
@@ -43,6 +77,32 @@ def _last_input_age_ms() -> float | None:
     if not user32.GetLastInputInfo(ctypes.byref(info)):
         return None
     return float((kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF)
+
+
+def _foreground_hook_loop(events: list, ready: threading.Event, info: dict) -> None:
+    def callback(hook, event, hwnd, id_object, id_child, event_thread, event_time):
+        events.append((time.time(), int(hwnd or 0)))
+
+    proc = WinEventProc(callback)
+    handle = user32.SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND,
+        EVENT_SYSTEM_FOREGROUND,
+        None,
+        ctypes.cast(proc, ctypes.c_void_p),
+        0,
+        0,
+        WINEVENT_OUTOFCONTEXT,
+    )
+    info["handle"] = handle
+    info["tid"] = int(kernel32.GetCurrentThreadId())
+    info["proc"] = proc
+    ready.set()
+    msg = wintypes.MSG()
+    while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        user32.TranslateMessage(ctypes.byref(msg))
+        user32.DispatchMessageW(ctypes.byref(msg))
+    if handle:
+        user32.UnhookWinEvent(handle)
 
 
 @dataclass
@@ -55,6 +115,8 @@ class FocusRun:
     unexpected_focus_switch: bool = False
     cursor_displacement: int = 0
     external_input_during_window: bool | None = None
+    hook_foreground_events: list[tuple[float, int]] = field(default_factory=list)
+    event_hook_active: bool = False
 
 
 class Win32FocusGuard:
@@ -83,6 +145,9 @@ class Win32FocusGuard:
         events: list[tuple[float, int]] = []
         trace: list[tuple[float, int, int]] = []
         last_foreground = [before.foreground_hwnd]
+        hook_events: list[tuple[float, int]] = []
+        hook_info: dict = {}
+        hook_ready = threading.Event()
 
         def sample() -> None:
             while not stop.is_set():
@@ -97,19 +162,31 @@ class Win32FocusGuard:
                 time.sleep(self.interval)
 
         sampler = threading.Thread(target=sample, daemon=True)
+        hook_thread = threading.Thread(
+            target=_foreground_hook_loop,
+            args=(hook_events, hook_ready, hook_info),
+            daemon=True,
+        )
         sampler.start()
+        hook_thread.start()
+        hook_ready.wait(timeout=1.0)
         try:
             result = action()
         finally:
             time.sleep(settle)
             stop.set()
             sampler.join(timeout=1.0)
+            tid = hook_info.get("tid")
+            if tid:
+                user32.PostThreadMessageW(int(tid), WM_QUIT, 0, 0)
+            hook_thread.join(timeout=1.0)
 
         after = self.snapshot()
         if after.foreground_hwnd != last_foreground[0]:
             events.append((after.ts, after.foreground_hwnd))
 
-        unexpected = any(fg != before.foreground_hwnd for _, fg in events)
+        combined = events + hook_events
+        unexpected = any(fg != before.foreground_hwnd for _, fg in combined)
         displacement = max(
             (
                 max(abs(x - before.cursor_xy[0]), abs(y - before.cursor_xy[1]))
@@ -130,6 +207,8 @@ class Win32FocusGuard:
             unexpected_focus_switch=unexpected,
             cursor_displacement=displacement,
             external_input_during_window=external_input,
+            hook_foreground_events=hook_events,
+            event_hook_active=bool(hook_info.get("handle")),
         )
 
     def wrap(self, action):

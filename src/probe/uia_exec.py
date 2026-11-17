@@ -7,8 +7,9 @@ import time
 
 import uiautomation as auto
 
+from packages.focusguard.classify import classify
 from packages.focusguard.monitor import FocusRun, Win32FocusGuard
-from packages.focusguard.outcome import ActionResult, ResultState
+from packages.focusguard.outcome import ActionResult
 from packages.routing.capability import Channel, InterferenceRisk
 
 TARGET_TITLE = "GUIBridge UIA Test Target"
@@ -103,16 +104,13 @@ def _result(
     evidence: dict,
     error: str | None = None,
 ) -> ActionResult:
-    if error or not verified:
-        state = ResultState.FAILED
-    elif run.unexpected_focus_switch or run.cursor_displacement > 0:
-        state = ResultState.SUCCESS_WITH_INTERFERENCE
-    else:
-        state = ResultState.SUCCESS_NO_INTERFERENCE_OBSERVED
+    state = classify(run, verified, error, Channel.UIA)
     evidence = dict(evidence)
     evidence["cursor_displacement"] = run.cursor_displacement
     evidence["foreground_events"] = [foreground for _, foreground in run.foreground_events]
     evidence["external_input_during_window"] = run.external_input_during_window
+    evidence["hook_foreground_events"] = [foreground for _, foreground in run.hook_foreground_events]
+    evidence["event_hook_active"] = run.event_hook_active
     if error:
         evidence["error"] = error
     return ActionResult(
