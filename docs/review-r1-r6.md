@@ -105,6 +105,9 @@ APPROVAL_HINTS = ("等待审批", "需要审批", "需审批", "approval require
 副作用是模型只要在任何回复里写出「需要审批」四个字，状态机就永久停在审批态、编排侧空等。
 建议 `detect_state` 只匹配固定容器内的文本（如审批卡片），不做全文 `in`。
 
+处理进展见 §7：只读探针测不到「审批菜单点得开吗」，本方已把这一段改成显式结论而非静默跳过；
+上面 (a)/(b) 二选一针对的是 A 线自己那份 `states.py`，仍待 A 线回复。
+
 ### 保留意见 2：能力表新增条目与 R4 的顺序
 
 A 线在 `guibridge-design.md:286` 记录了 OCR 仅定位实测 `none`，并明确「新增表条目涉及
@@ -142,10 +145,22 @@ R4 操作名 crosswalk，留 B 线裁决」。
 
 ### 4.3 版本基线
 
-实装是 `D:\Trae CN\Trae CN.exe` = ProductVersion **3.4.20**（FileVersion 2.3.103559），
-而 `packages/adapters/trae/locators.yaml:3` 与 F 系列结论基线为 **3.6.13**。
-Phase 1 的 Trae 实测究竟跑在哪个版本，需要 A 线在 §11.2 回复里写明 `app_version`；
-若为 3.4.20，注册表需要新开分节，且本分支 `docs/README` 的「基线 3.6.13」也要更正。
+三个号码互不一致：exe 元数据 ProductVersion **3.4.20**（FileVersion 2.3.103559）、A 线只读探针
+（run `20261117T135355Z`）回报的 UA **`Trae/1.107.1`**、`packages/adapters/trae/locators.yaml:3` 与
+F 系列结论基线 **3.6.13**。同一次只读探针另一条更重要的事实：**控件都在、没有改名，会话模式能读出 `Chat`**。
+
+据此本方改变口径：**不再拿版本号当核基线的判据**，改以注册表链的实际命中为准——`semantic_id` 每次动作前
+重定位，整条链落空即 `locator_missing` 并停止，命中等价于「这份注册表对该实例可用」；版本号降级为事件里的
+环境标注。README「已知限制」里那条已按此改写（只留一处，原来重复了两遍）。
+
+代码实况与此一致，不是新决定：`app_version` 只从 `locators.yaml` 的标签流进 `Engine`/`save_locator`
+（`apps/desktop-agent/main.py:53`），运行期没有任何一处拿它与真实实例比对——重定位只认链上策略能否命中 DOM。
+副作用请一并评审：heal_patches 以 `(semantic_id, app, app_version)` 为主键，真人批准的补丁会挂在
+「3.6.13」这个标签上，与真实实例的版本号无关；若 A 线要按版本分节，`locators.yaml` 与
+`locator_cache.load(app, app_version)`（S1 骨架）都需一起定口径。
+
+请 A 线在 §11.2 回复里补两项：探针实例是托管启动还是接管已启动进程；UA 与 ProductVersion 取自哪个通道。
+若 Phase 1 的实测确实跑在 3.4.20/1.107.1，`locators.yaml` 需新开分节——那是冻结文件 #3，走双人 approve。
 
 ---
 
@@ -164,3 +179,27 @@ Phase 1 的 Trae 实测究竟跑在哪个版本，需要 A 线在 §11.2 回复�
   现有「全部授权」不自动延伸，本记录不代答。
 - `api.md` 扩展（R2a）与契约冻结清单 #2 的路径变更均需双人 PR，非本文件可生效。
 - `EventStore.prune()` 接线点仍是产品决定（`docs/security.md`「尚未落实」1）。
+
+---
+
+## 7. 执行记录（2026-11-17，A 线只读探针之后）
+
+A 线步骤 1（只读：控件在不在、有没有改名、当前是什么模式）已完成，对方报告该分支 309 测试全过。
+结论两条：**控件都在且未改名，模式态能读出 `Chat`**（本方担心的「改名」在本机不存在）；
+**审批菜单能否打开没测**——那要点击，超出只读范围。双方同意这是 B 线步骤 2，本方已落地：
+
+| 改动 | 位置 | 效果 |
+|---|---|---|
+| 审批模式读取从静默 `return` 改为显式结论 | `packages/adapters/trae/adapter.py::force_manual_approval` | 必落一种 `outcome`，每次都写 `approval_mode_read` 事件 |
+| 肯定证据替代「缺席即通过」 | `packages/adapters/trae/states.py::approval_state`、`approval_mode_manual` 谓词 | 读出「手动审批」标签才算手动；只命中 class 记 `unreadable`，都读不到记 `absent`，批准后仍读到 `auto` 记 `manual_label_unreadable` |
+| agent 模式加硬门 | `packages/adapters/trae/adapter.py::send_task` | 除 token 外还必须读出 `manual_confirmed`，F9 那类误点击不能再悄悄跑在 auto 下 |
+| 已手动时一次点击都不发 | 同上 | 不产生审批请求（断言 `list_approvals() == []`），少做一遍高影响动作 |
+| 标签可测性交给 A 线 | `locators.yaml`（冻结 #3） | 本方不碰注册表；菜单开合的实测见下 |
+| 替身行为与判据对齐 | `apps/desktop-agent/simulated.py` | G1 换真实通道前，模拟通道按同一套标签规则应答（非冻结文件） |
+
+证据等级：**fixture**。`tests/test_adapter_flow.py` 新增 6 条——已手动不发点击、读不到触发器仍记录并继续、
+标签不可读说 `unreadable`、批准后仍读不到手动 → `approval_required` 且任务 `failed`、批准后两个标签同时命中
+（复读不是 `manual`）同样致命、agent 拒绝未确认——全套 `181 passed, 5 deselected`。
+**真实 Trae 上的标签读取与菜单开合仍未测**：那需要一次带点击的 live 运行，排在 G1 或下面的 R5 之后。
+
+R5 状态不变：本方未获用户对新 live 写的授权，不代答；A 线仪器默认拒绝（退出码 3）这点做得对。

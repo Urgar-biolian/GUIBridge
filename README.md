@@ -54,7 +54,7 @@
 
 ```bash
 python -m pip install -e ".[dev]"
-pytest -m "not live"                 # 175 passed, 5 deselected（live 需本机真实 Trae）
+pytest -m "not live"                 # 181 passed, 5 deselected（live 需真实窗口 + G1 后的 CDP 通道）
 
 # 控制平面（loopback only；--mode simulated 用 fixture 通道，不需要打开 Trae）
 python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --port 8765
@@ -96,8 +96,9 @@ tests/                  单测 + live 标记集成测试
 ## 已知限制
 
 - 仅支持交互式桌面会话；锁屏/UAC/远程桌面断开不保证可用。
-- Trae 定位器基线为 3.6.13；其他版本需重跑探针。
-- CDP 通道要求托管启动目标应用（仅 loopback 随机端口）。
+- Trae 定位器基线写在注册表里是 S0 探针时的 3.6.13，而本机实装回报的 UA 为 `Trae/1.107.1`、exe 元数据为
+  3.4.20 —— 三个号码互不一致，所以**不拿版本号当判据**：以 `semantic_id` 重定位能否命中当前 DOM 为准，
+  整条链落空即报 `locator_missing` 并停止，改版本需重跑探针。
 - **没有真实 Trae 通道。** `packages/perception/` 与 `packages/semantic/` 仍是骨架，控制平面跑的是
   `tests/fixtures/trae/dom_ide_idle.json` 驱动的模拟通道；Dashboard 顶部常驻黄条说明这一点。
   模拟通道的元素、会话文本、状态都不是 Trae 实测。
@@ -112,5 +113,4 @@ tests/                  单测 + live 标记集成测试
 - 5 条 `@pytest.mark.live` 用例默认 deselect，未在 G1 之前伪称通过。
 - CDP 通道要求托管启动目标应用（仅 loopback 随机端口），实现见 `apps/desktop-agent/launch.py`。
 - 仅支持交互式桌面会话；锁屏 / UAC 安全桌面 / 远程桌面断开 / 多显示器 DPI 变化可能导致失效（报 unknown 并停止）。
-- Trae 定位器基线为 3.6.13；其他版本需重跑探针。
 - 骨架中 `NotImplementedError("Sx")` 为阶段占位，对应 dev-prompts 的实现任务。

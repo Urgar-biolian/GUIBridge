@@ -17,8 +17,12 @@
   实现 `packages/events/store.py::grant_approval/consume_approval`。
 - Trae Agent 模式任务默认**手动审批**；自动审批仅在调用显式授权时启用（探针 F9 实证风险）。
   实现 `packages/adapters/trae/adapter.py`：`mode == "agent"` 无 token 直接 `approval_required`；
-  `allow_auto_approval=False` 时先 `force_manual_approval()` 并核对 `approval_mode_manual` 后置条件。
-  测试：`tests/test_adapter_flow.py`、`tests/test_states.py`。
+  `allow_auto_approval=False` 时先 `force_manual_approval()`——它按触发器标签读一次当前模式，并把结论
+  写成 `approval_mode_read` 事件（`manual_confirmed` / `unverified:menu_not_confirmed` /
+  `unverified:trigger_unreadable` / `unverified:trigger_absent` / `auto_allowed`），**读不到标签不再等于
+  「已经是手动」**。agent 模式除 token 外还要求读出 `manual_confirmed`；已确认手动时一个点击都不发。
+  `approval_mode_manual` 后置条件用肯定证据（`button[aria-label='手动审批']` 在场），缺席不算证据。
+  测试：`tests/test_adapter_flow.py`、`tests/test_states.py`；标签读取的 live 往返仍未实测（G1）。
 
 ## CDP 通道
 

@@ -28,11 +28,34 @@ G1 前的一次性替身（届时删除，改接 `perception.cdp` + `semantic.re
 `apps/desktop-agent/simulated.py`（确定性 Trae 行为，只重放 PROBE_REPORT F5/F6/F9）、
 `apps/desktop-agent/registry.py`（locators.yaml → `Locator`）。
 
-### 未达成的出口条件（需要 live 环境，本机无 Trae 安装）
+### 追加修复（2026-11-17）：审批模式读取不再静默跳过
+
+A 线只读探针（run `20261117T135355Z`）确认触发器在本机存在且标签携带当前模式，据此把
+`force_manual_approval()` 从「读不出来就 `return None`」改成**每次读取都产出一条可审计结论**并写
+`approval_mode_read` 事件：
+
+| 触发器读出 | 行为 | `outcome` |
+|---|---|---|
+| 已带「手动审批」标签 | 直接放行，**不点击**（无审批请求） | `manual_confirmed`（`clicked=false`） |
+| 带「自动审批」→ 批准后读出「手动」 | 放行 | `manual_confirmed`（`clicked=true`） |
+| 带「自动审批」→ 批准后仍读不到「手动」 | `approval_required`，任务 `failed`，不提交 | `unverified:menu_not_confirmed` |
+| 点击已确认后置条件，但复读仍不是 `manual` | `approval_required`，任务 `failed`，不提交 | `unverified:manual_label_unreadable` |
+| 只有 class、标签读不出 | chat 记录后继续；agent 拒绝 | `unverified:trigger_unreadable` |
+| 触发器不在 | chat 记录后继续；agent 拒绝 | `unverified:trigger_absent` |
+| `allow_auto_approval=True` | 不读，由调用方显式承担 | `auto_allowed` |
+
+配套两处：`approval_mode_manual` 后置条件由「`自动审批` 不在」改为「`手动审批` 在场」——**缺席从来不是
+证据**；`send_task(mode="agent")` 除 token 外还要求读出 `manual_confirmed`（F9 那次误点击的根因）。
+证据等级仍是 fixture：`tests/test_adapter_flow.py` 新增 6 条用例（全套 181 passed, 5 deselected）；
+真实 Trae 上的标签读取往返未实测，属 G1 live 项（见上「未达成的出口条件」4）。
+
+### 未达成的出口条件（需要真实窗口与 G1 后的 CDP 通道）
 
 1. **「MCP 闭环 live 测试通过」— 未验证。** `tests/test_live_trae.py` 已按 dev-prompts §9 写好（外部 MCP
    Client + stdio、固定无害消息、chat-only、结束后核对 `git status --porcelain` 为空），当前整体 skip；
-   原因两层：本机没有 `D:\Program\Trae\Trae.exe`，且 `packages/perception/cdp.py` 仍是 S1 桩（gate G1）。
+   原因两层：`packages/perception/cdp.py` 仍是 S1 桩（gate G1），live 用例拿不到托管通道；本机确实装了
+   Trae（A 线只读探针 run `20261117T135355Z` 在该实例上读到控件），但安装路径与用例默认值不同，
+   运行时需带 `GUIBRIDGE_TRAE_EXE` 指过去。
 2. **「事件存储含完整迁移链」— 仅 fixture 成立。** 迁移链、evidence_id、SSE 顺序均有断言；真实 Trae 会话
    的链未采集。
 3. **「误点击 0」— 仅 fixture 成立。** 断言（所有 `success` 动作都 `verified`）已写入同一 live 用例。
@@ -64,7 +87,7 @@ G1 前的一次性替身（届时删除，改接 `perception.cdp` + `semantic.re
 ### 环境
 
 Python 3.12.9（`.venv`，`pip install -e ".[dev]"`）｜mcp SDK 2.3.0（`MCPServer`）｜Node 便携版
-`C:/Users/<you>/tools/node`（v24.22.3，S4-b 用）｜无 Trae。
+`C:/Users/<you>/tools/node`（v24.22.3，S4-b 用）｜本机装了 Trae，但 B 线没有能连它的通道（`perception.cdp` 待 G1）。
 
 ---
 
@@ -102,12 +125,12 @@ CLI 亦已本机实测：把 demo-app 复制成独立仓库、剥掉参照实现
 「executor 提权失败」与「只有 verifier 写得出第 4 个 transition」。但这条门只覆盖 `verified` 一个词——
 `store.py` 无迁移顺序表（见下）。
 
-### 未达成的出口条件（需要 live 环境，本机无 Trae 安装）
+### 未达成的出口条件（需要真实窗口与 G1 后的 CDP 通道）
 
 1. **「端到端 live 演示一次成功」— 未验证。** `tests/test_live_handoff.py`（2 条，默认 deselected）已按 dev-prompts
    §5 写好：外部 MCP Client + stdio、剥离参照实现、让 Trae 做「显示/隐藏 + 补测试」、独立 verifier 判 verified，
    并在真正交接前跑一次 pre-flight 验收证明基线必须失败（否则「verified」是自证）。跳过原因与 S2 相同：
-   本机无 `D:\Program\Trae\Trae.exe`，`packages/perception/cdp.py` 仍是 S1 桩（gate G1）。
+   `packages/perception/cdp.py` 仍是 S1 桩（gate G1），且本机 Trae 安装路径与用例默认值不同（需 `GUIBRIDGE_TRAE_EXE`）。
 2. **「TaskRecord 含 `submitted → running → claimed_done → verified` 完整链」— 仅 fixture 成立。** 断言已在
    `tests/test_live_handoff.py:180`，本机由 fixture 链等价覆盖。
 3. **live 路径的审批前提未实测**：MCP 工具面没有 `approval_token`（api.md），所以 live 运行必须有人先在 Dashboard
