@@ -98,6 +98,8 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 **表述纪律**：`SUCCESS_NO_INTERFERENCE_OBSERVED` 只表示“未观察到”，不能表述为“绝对无干扰”。文档与 UI 必须保留该限定。
 
+**重试约束落地**：原则 6（非幂等未确认操作禁止自动重试）由草案 `packages/focusguard/retry_policy.py` 的 `decide_retry(state, idempotent, attempts, max_attempts)` 强制：`UNCONFIRMED`/`FAILED` 且非幂等一律 `allow_retry=False` 且 `requires_approval=True`；幂等操作仅在预算内可重试，预算耗尽转人工审批；两种成功态不重试。该约束在 Phase 2 接入执行器前为独立草案，含单测 `tests/test_retry_policy.py`（11 例）。
+
 ### 4.3 采样限制
 
 FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报。后续 `src/probe/dwell_limit.py` 用更快注入（线程输入一次性附着 + 裸 `SetForegroundWindow`）把停留压到毫秒级，0/5/10/20/50 ms 各 5 次共 25/25 轮询与钩子均检出、0 外部输入污染——说明此前 ~57 ms 下限是 `quick_foreground` 开销而非 FocusGuard 极限。钩子另采集系统 `event_time`（`FocusRun.hook_event_times` + `hook_dwell_ms()`）做精确计时：最短可解析真实停留 15 ms（run `20261117T093513Z`），`time.time()` 的 8.9/5.1 ms 含分发延迟不作下限；`event_time` 为 1 ms 分辨率，同 tick 事件无法解析（1 个 None）。**<2 ms 的切换仍未实证覆盖**（2 ms 采样盲区 + 1 ms 计时分辨率）。大样本复核（`src/probe/focusguard_reliability.py`，run `20261117T093120Z`）：30 静默负例误报 0/30、15 注入正例（~100 ms）检出 15/15（轮询与钩子均 15/15），强化 E2 小样本结论。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
@@ -236,6 +238,7 @@ class ActionResult:
 | UIA 执行通道与风险声明 | `src/probe/uia_exec.py`、第 3.5 节 | 草案 |
 | Trae 四接口契约 | 第 5.2 节 | 草案（Phase 2 正式接入） |
 | 实测能力表 + 加载器 | `packages/routing/capabilities.draft.yaml`、`capability_table.py` | 草案（含单测） |
+| 重试策略（原则 6 落地） | `packages/focusguard/retry_policy.py`、第 4.2 节 | 草案（含单测） |
 
 ### 11.2 B 线 approve 检查项
 
@@ -248,6 +251,7 @@ class ActionResult:
 - [ ] 确认微信负例（可见窗口仅 4 个 UIA 框架节点）作为“不支持后台语义操作”的证据。
 - [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae 只读接口已实测 `none`（run `20261117T092712Z`），而 `send_task` 发送点击仍 `unknown`（不假设 `logical_only`），并认领授权 live 测量任务。
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
+- [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
 
 ### 11.3 实测依据索引
 
@@ -256,6 +260,7 @@ class ActionResult:
 - 四态分类单测：`tests/test_phase1_classification.py`（14 例）——含 `detect_unexpected_focus_switch` 聚合（轮询漏记、仅钩子捕获仍判干扰）与 `hook_dwell_ms` 精确计时（含 32 位回绕、缺失对返回 None）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
+- 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。
