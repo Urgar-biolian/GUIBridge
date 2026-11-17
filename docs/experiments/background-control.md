@@ -1,6 +1,6 @@
 # 后台控制可行性实验（background-control）
 
-状态：Phase 1 实验已执行（2026-11-17）。权威数据来自 run `20261117T082451Z`。
+状态：Phase 1 实验已执行（2026-11-17）。权威数据来自 run `20261117T082451Z`（E1/E1b/E2/E3/E4 基线）与增补 run `20261117T090104Z`（E1c 前台对照、E2 停留曲线、微信 PID 扫描、Trae live 无害消息）。增补结果见第 11 节。
 纪律：禁止伪造测试数据、模拟成功结果或把未完成功能标记为完成。所有数字均来自 `src/probe/run_experiments.py` 的可复跑输出，原始 JSON 位于 `var/experiments/<run_id>/results.json`（gitignore，不入库）。
 
 ## 1. 目标
@@ -41,11 +41,12 @@ python -X utf8 src/probe/run_experiments.py
 |---|---|---|---|
 | E1 | 原生 UIA pattern 序列 | 靶窗口以 `SW_SHOWNOACTIVATE` 启动；依次 Toggle、Toggle back、Invoke、SetValue；每次动作由 FocusGuard 包裹并回读状态 | 状态变化 + 光标位移 + 前台 HWND 事件 |
 | E1b | 隔离的后台 pattern 试验 | 每种 pattern 预创建 3 个后台窗口，静置 1.2 s，逐个等待输入静默后执行一次；避免前序动作/窗口创建污染 | 9 次独立试验的四态、光标位移、外部输入标记 |
-| E2 | FocusGuard 检出 | 3 次注入已知焦点切换（目标→遮挡窗→目标），3 次静默负例 | 检出率、误报率、事件序列 |
+| E1c | 隔离的前台 pattern 对照 | 每种 pattern 预创建 3 个窗口并先激活到前台、静置后执行；与 E1b 对照前后台差异 | 9 次独立试验的四态、轮询/钩子焦点事件、外部输入标记 |
+| E2 | FocusGuard 检出与停留曲线 | 注入已知焦点切换（目标→遮挡窗→目标），请求停留 20/50/120 ms 各 3 次，另 3 次静默负例；同时记录轮询与事件钩子 | 实测停留、轮询/钩子检出率、误报率、事件序列 |
 | E3 | UIA vs SendInput | 同一按钮/输入框/复选框分别走物理点击与 SendInput 文本 | 四态、光标位移、焦点事件 |
 | E4 | 几何变化与遮挡 | 移动/缩放后 UIA Invoke；全遮挡下 UIA Invoke vs 坐标点击 | 效果回读、命中对象、焦点变化 |
 | E5 | 能力扫描与负例 | 原生靶应用 pattern 扫描；Trae UIA 树；微信进程/窗口扫描 | pattern、节点数、缺失语义、失败原因 |
-| E6 | Trae 只读能力复跑 | 只读 HTTP `GET /json` 与既有 `uia_probe.py`；**不发送聊天消息** | CDP target 列表、UIA 节点摘要 |
+| E6 | Trae 能力复跑 | 只读 HTTP `GET /json` 与既有 `uia_probe.py`；增补 run 在用户授权下于 Chat 模式发送一条固定无害消息并读回 | CDP target 列表、UIA 节点摘要、live 提交/读回日志 |
 
 ## 4. 指标
 
@@ -173,8 +174,8 @@ E4 遮挡试验（`external_input=false`）给出了同样的方向：UIA Invoke
 
 1. **UIA 不是天然“无焦点干扰”通道。** 在受控 Win32 靶应用上，9/9 后台 UIA pattern 调用都切换了前台，但没有移动光标。风险声明必须实测，不能把 `LOGICAL_ONLY` 当成 UIA 的默认值。
 2. **“光标零位移”与“无焦点干扰”必须分开报告。** E1b 同时满足前者、不满足后者；四态中的 `success_with_interference` 准确表达了这一组合。
-3. **目标已在前台时，UIA 动作可以做到无新增焦点切换**（E1 的 SetValue、Toggle back），但仍需以实测为准。
-4. **FocusGuard 能检出可见的焦点切换，并能标记外部输入。** 权威运行中 E2 为 3/3 检出、0/3 误报；`GetLastInputInfo` 帮助识别被用户输入污染的窗口。
+3. **前台起步并不能消除 UIA 焦点干扰。** 增补 run 的 E1c 9/9 前台起步试验仍出现瞬时焦点切换（切走再切回），`external_input=false`；其中 3 次短到 2 ms 轮询漏记，需事件钩子补捉。基线 run 中 E1 的 SetValue/Toggle back 未观察到新增切换，属个例而非普遍结论。
+4. **FocusGuard 能检出焦点切换并标记外部输入；事件钩子优于纯轮询。** 基线 E2 为 3/3 检出、0/3 误报；增补 E2 停留曲线（实测 57–138 ms）轮询与钩子均 9/9、误报 0/3；E1c 中钩子补捉了轮询漏掉的 3 次瞬时切换。`GetLastInputInfo` 帮助识别被用户输入污染的窗口。
 5. **遮挡下 UIA 仍能命中语义控件，坐标点击会打到遮挡窗。** 这是“语义定位优于坐标点击”的直接证据。
 6. **Trae 的语义控制应走 CDP，不应依赖 UIA 控件树。** 本次 UIA 扫描没有 chat composer/send；CDP page target 可读，但本轮遵守安全约束未发送消息。
 
@@ -185,18 +186,66 @@ E4 遮挡试验（`external_input=false`）给出了同样的方向：UIA Invoke
 | 至少一个应用支持不移动物理鼠标的语义操作 | 满足（受控靶应用） | E1b 9/9，光标位移全 0 |
 | 能记录焦点变化事件 | 满足 | E2 3/3，事件序列含前后 HWND |
 | 能检测目标控件操作是否成功 | 满足 | E1/E1b/E3/E4 全部独立状态回读 |
-| 能识别不支持后台操作的情况 | 部分满足 | 遮挡坐标点击被遮挡窗接收；Trae UIA 无 chat 语义；微信窗口未找到 |
-| Trae 实际支持能力有测试证据 | 部分满足 | E5/E6 只读证据；未新增 live 聊天提交 |
+| 能识别不支持后台操作的情况 | 满足 | 遮挡坐标点击被遮挡窗接收；Trae UIA 无 chat 语义；微信可见窗口仅 4 个 UIA 框架节点、无 Edit/Button（run `20261117T090104Z`） |
+| Trae 实际支持能力有测试证据 | 满足 | E5/E6 只读证据 + 授权 live：Chat 模式发送一条无害消息、读回 `OK`、工作区零变更（第 11.5 节） |
 | 所有实验可复跑 | 满足（有环境差异说明） | 固定命令、环境与原始 JSON；见第 6、10 节 |
 
 ## 10. 已知限制
 
 - 靶应用是自建 ctypes Win32 程序，不是 Trae/微信等第三方应用；结论不能直接外推到自绘或 Electron 界面。
 - 9/9 焦点切换发生在 UIA 调用窗口内且无外部输入，但仍未进一步区分是 UIA provider、MSAA 桥接还是窗口管理器的行为。
-- FocusGuard 以 2 ms 采样，可能漏掉更短的前台切换；E2 只验证了约 120 ms 的切换。
+- FocusGuard 以 2 ms 采样，可能漏掉更短的前台切换；增补 run 的 E1c 中轮询漏掉 3 次瞬时切换，但 `SetWinEventHook` 事件钩子 9/9 全部捕获。E2 停留曲线只覆盖实测约 57–138 ms，<50 ms 未覆盖。
 - `GetLastInputInfo` 是会话级时间戳，不能识别输入来自哪个进程；`external_input_during_window=true` 只表示“窗口内有输入事件”。
 - 光标位移是动作窗口内的最大轴向位移；真实鼠标移动会造成污染。`20261117T082611Z` 因窗口内有真实鼠标输入被弃用，不以该运行的数字下结论。
 - E4 的 DPI 变更未执行；主题切换、异常弹窗未覆盖。
-- 微信当前进程存在但顶层窗口未找到，不能据此刷新“无 UIA 节点”的结论；该负例仍引用 `src/probe/PROBE_REPORT.md`。
-- E6 的 CDP 端口为既有 9222，只做了 loopback 只读访问；未验证随机端口托管启动。
-- 全程未发送聊天消息、未点击 send；live Trae 提交证据需在用户明确授权后另行执行。
+- 微信负例已在增补 run 刷新：按 PID 匹配 `EnumWindows` 找到可见窗口“微信”（类 `Qt51514QWindowIcon`），UIA 仅 4 个节点（Window/2×Pane/TitleBar），无 Edit/Button；自绘聊天语义不可经 UIA 获取。该结论限于当前微信版本与窗口状态。
+- E6 的 CDP 端口为既有 9222，只做了 loopback 访问；未验证随机端口托管启动。
+- live Trae 提交仅在用户明确授权下执行一次（Chat 模式、固定无害消息），不构成对 agent 模式或批量发送的授权；agent 模式仍默认手动审批。
+
+## 11. 增补 run `20261117T090104Z`
+
+环境：Windows 11 `10.0.26100`、Python 3.12.9、uiautomation 2.0.29、2560×1440 / DPI 120；靶窗口 hwnd 1053000（`GUIBridgeTestWindow`）；运行时 `git_head=fa4ddb9`，P0 代码随后提交为 `4665ab8`。原始数据 `var/experiments/20261117T090104Z/results.json`；live 日志 `var/experiments/20261117T090104Z/trae_live_send.log`（均 gitignore）。本 run 新增 FocusGuard `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子，与 2 ms 轮询并行记录。
+
+### 11.1 E1b：后台 pattern（复核）
+
+| Pattern | 后台起步 | 效果回读 | 四态 | 光标位移 | 外部输入 | 钩子焦点事件 |
+|---|---|---|---|---|---|---|
+| Invoke | 3/3 | 3/3 clicked 0→1 | 3/3 success_with_interference | 0,0,0 | 1/3 true，2/3 false | 3/3 非空 |
+| SetValue | 3/3 | 3/3 `initial`→`bg-value` | 3/3 success_with_interference | 0,0,0 | 3/3 false | 3/3 非空 |
+| Toggle | 3/3 | 3/3 off→on | 3/3 success_with_interference | 0,0,0 | 3/3 false | 3/3 非空 |
+
+9/9 `unexpected_focus_switch=true`、9/9 光标位移 0。Invoke 第 1 次试验窗口内有外部输入（`external_input=true`），其焦点切换不能单独归因于 UIA；其余 8 次 `external_input=false`，与基线 run 的 9/9 结论方向一致。
+
+### 11.2 E1c：前台 pattern 对照（新增）
+
+每种 pattern 先 `ensure_foreground` 激活到前台、静置后执行，3×3=9 次：
+
+| Pattern | 前台起步 | 效果回读 | 四态 | 光标位移 | 外部输入 | 轮询事件非空 | 钩子事件非空 |
+|---|---|---|---|---|---|---|---|
+| Invoke | 3/3 | 3/3 clicked 0→1 | 3/3 success_with_interference | 0,0,0 | 3/3 false | 1/3 | 3/3 |
+| SetValue | 3/3 | 3/3 `initial`→`fg-value` | 3/3 success_with_interference | 0,0,0 | 3/3 false | 3/3 | 3/3 |
+| Toggle | 3/3 | 3/3 off→on | 3/3 success_with_interference | 0,0,0 | 3/3 false | 2/3 | 3/3 |
+
+关键发现：**目标已在前台时，UIA 动作仍会引发瞬时焦点切换（切走再切回），9/9 `unexpected_focus_switch=true`、9/9 `external_input=false`。** 其中 3 次切换短到 2 ms 轮询未记录（`foreground_events` 为空），但事件钩子 9/9 全部捕获。这修正了基线 run 第 8 节第 3 条“前台时 UIA 可无新增焦点切换”的乐观表述：在该靶应用上，前台起步同样存在焦点干扰，且必须依赖事件钩子才能完整记录。
+
+### 11.3 E2：停留曲线（新增钩子对照）
+
+| 请求停留 | 实测停留 (ms) | 轮询检出 | 钩子检出 | 任一检出 |
+|---|---|---|---|---|
+| 20 ms ×3 | 60.3 / 58.4 / 57.8 | 3/3 | 3/3 | 3/3 |
+| 50 ms ×3 | 67.3 / 72.0 / 57.0 | 3/3 | 3/3 | 3/3 |
+| 120 ms ×3 | 137.8 / 137.3 / 128.1 | 3/3 | 3/3 | 3/3 |
+
+负例 3/3 事件序列为空，误报率 0.0；总检出率 1.0（轮询 1.0、钩子 1.0）。`quick_foreground` 的激活/恢复开销使请求 20 ms 实际落到约 57–60 ms，**<50 ms 的瞬时切换本轮未覆盖**，不能外推为“任意短切换都能检出”。E1c 已证明钩子能补捉轮询漏掉的瞬时切换。
+
+### 11.4 E5：微信负例（刷新）
+
+按 `tasklist` PID 匹配 + `EnumWindows`：`Weixin.exe` 5 个 PID、10 个顶层窗口、1 个可见窗口。可见窗口 hwnd 133592、标题“微信”、类 `Qt51514QWindowIcon`；UIA 扫描仅 4 个节点（`WindowControl`×1、`PaneControl`×2、`TitleBarControl`×1），`has_edit=false`、`has_button=false`。结论：当前微信自绘界面不暴露聊天语义控件，UIA 通道不支持后台语义操作（负例成立，刷新了基线 run“窗口未找到”的旧状态）。
+
+### 11.5 E6：Trae live 无害消息（授权）
+
+- 只读：`Trae.exe` 进程在；CDP `127.0.0.1:9222/json` 返回 2 个 target（workbench page `Agui - TRAE` 与 layout-engine worker）；UIA 树仍无 chat composer/send。
+- live（用户授权“全部授权，继续完善”下执行一次）：脚本 `src/probe/cdp_send_test.mjs` 打开模式菜单并选中 `Chat`（非 Agent），聚焦 composer，`Input.insertText` 写入固定文本「请只回复 OK 两个字母，不要执行任何其他操作。」，点击 `.chat-input-v2-send-button`。
+- 读回：T+3s/T+6s `running=true`，T+9s `running=false`、send 按钮 disabled；会话文本出现该提问与回复 `OK`。`messages_sent=1`。
+- 副作用核查：发送前后 `git status --short` 仅含本线代码改动，Trae 未对工作区做任何编辑；模式为 Chat、未触发工具执行。
+- 边界：仅一条无害消息、仅 Chat 模式；未验证 agent 模式、批量发送、随机端口托管启动。

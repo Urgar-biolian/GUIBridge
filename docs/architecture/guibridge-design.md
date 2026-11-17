@@ -74,6 +74,8 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 设计修正：能力表按“应用 × 操作 × 控件 × 目标前后台状态”实测风险；`STRICT_NO_INTERFERENCE` 下未批准的 UIA 焦点切换仍应被拒。UIA 的“光标零位移”与“无焦点干扰”必须分开报告，不得用前者替代后者。
 
+增补 run `20261117T090104Z` 的 E1c（前台起步对照）进一步表明：目标已在前台时，9/9 UIA 动作仍引发瞬时焦点切换（切走再切回，`external_input=false`），其中 3 次短到 2 ms 轮询漏记、由 `EVENT_SYSTEM_FOREGROUND` 事件钩子捕获。因此“前台起步可视为无焦点干扰”的假设不成立，风险声明必须覆盖前后台两种状态，且 FocusGuard 需以事件钩子补捉瞬时切换。
+
 ## 4. 核心能力 B：FocusGuard
 
 ### 4.1 监测信号
@@ -98,7 +100,7 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 
 ### 4.3 采样限制
 
-FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样，不保证捕获两次采样之间的瞬时切换。Phase 1 E2 在约 120 ms 的注入切换上得到 3/3 检出、0/3 误报；更短切换的漏检率尚未量化。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
+FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报；<50 ms 的切换尚未覆盖（`quick_foreground` 开销使请求 20 ms 实际落到约 57 ms）。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
 
 ## 5. 核心能力 C：AI IDE 语义适配器（Trae）
 
@@ -208,12 +210,43 @@ class ActionResult:
 | 记录焦点变化事件 | E2 | FocusGuard 事件日志 |
 | 检测目标控件操作是否成功 | E1/E3 | 状态回读 + 四态结果 |
 | 明确识别不支持后台操作 | E5（含微信 4.x / Trae UIA 负例） | capability scan 输出 |
-| Trae 实际能力有测试证据 | E6（复跑探针） | `src/probe/PROBE_REPORT.md` 增补 |
+| Trae 实际能力有测试证据 | E6（只读复跑 + 授权 live 无害消息） | `src/probe/PROBE_REPORT.md` 增补；Chat 模式读回 `OK`、工作区零变更 |
 | 所有实验可重复运行 | `src/probe/run_experiments.py` | 固定环境记录 + 原始 JSON |
 
 ## 10. 开放问题
 
-1. ctypes Win32 标准控件经 MSAA→UIA 桥的 pattern 可用性需 E1 实测；失败则切换 PowerShell WinForms 靶应用（D1 备选）。
-2. FocusGuard 漏检率与采样频率的关系需量化。
+1. ~~ctypes Win32 标准控件经 MSAA→UIA 桥的 pattern 可用性需 E1 实测~~ 已实测：Invoke/Value/Toggle/Text 均可用（E1/E1b/E1c），无需切换备选靶应用。
+2. FocusGuard 漏检率与采样频率的关系已部分量化：事件钩子补捉轮询漏掉的瞬时切换（E1c），E2 停留曲线覆盖 57–138 ms；<50 ms 仍待量化。
 3. Trae 版本升级后的选择器漂移由既有 heal 流程覆盖，需 Phase 2 复验。
-4. 新契约需 B 线 approve 后才能从“草案”转为冻结。
+4. 新契约需 B 线 approve 后才能从“草案”转为冻结（见第 11 节评审包）。
+
+## 11. 契约评审包（待 B 线 approve）
+
+本节汇总 Phase 1 形成的新契约草案与实测依据，供 B 线评审。**评审通过前不得接入冻结的 `engine` / `mcp_gateway` / Dashboard，不得变更旧契约（`element.py`、Engine Protocol、`locators.yaml`、`schema.sql`、`api.md`）。** G0 尚未正式通过。
+
+### 11.1 待评审草案清单
+
+| 草案 | 位置 | 状态 |
+|---|---|---|
+| `Channel` / `InterferenceRisk` / 策略过滤 | `packages/routing/capability.py`、第 3、6 节 | 草案 |
+| `FocusSnapshot` / `FocusRun` / `FocusGuard` Protocol | `packages/focusguard/monitor.py`、`outcome.py`、第 4 节 | 草案 |
+| 四态分类 `classify()` | `packages/focusguard/classify.py`、第 4.2 节 | 草案（含单测） |
+| UIA 执行通道与风险声明 | `src/probe/uia_exec.py`、第 3.5 节 | 草案 |
+| Trae 四接口契约 | 第 5.2 节 | 草案（Phase 2 正式接入） |
+
+### 11.2 B 线 approve 检查项
+
+- [ ] 确认 UIA 风险按“应用 × 操作 × 控件 × 前后台状态”实测，本机靶应用声明为 `FOCUS_SWITCH`，不接受 `UIA=LOGICAL_ONLY` 默认值。
+- [ ] 确认 E1c 前台起步仍存在瞬时焦点切换的结论，认可以事件钩子作为 FocusGuard 必备信号（而非可选）。
+- [ ] 确认四态语义：`SUCCESS_NO_INTERFERENCE_OBSERVED` 仅表示“未观察到”；Physical Input 验证成功一律 `SUCCESS_WITH_INTERFERENCE`；非幂等未确认操作禁止自动重试。
+- [ ] 确认 `external_input_during_window` 仅标记“窗口内有输入事件”，不用于单独判定干扰；污染运行须弃用并保留原文件。
+- [ ] 确认 E2 停留曲线仅覆盖 57–138 ms，<50 ms 漏检率未量化，不得外推为“任意瞬时切换可检出”。
+- [ ] 确认 Trae 主通道为 `APP_PROTOCOL`（loopback CDP），live 证据仅限授权的一次 Chat 无害消息；agent 模式默认手动审批。
+- [ ] 确认微信负例（可见窗口仅 4 个 UIA 框架节点）作为“不支持后台语义操作”的证据。
+- [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
+
+### 11.3 实测依据索引
+
+- 基线 run `20261117T082451Z`、增补 run `20261117T090104Z`：`docs/experiments/background-control.md` 第 7、11 节。
+- 四态分类单测：`tests/test_phase1_classification.py`（6 例）。
+- 代码提交：`4665ab8`（P0 实验改进）。

@@ -59,3 +59,11 @@
 
 - CDP 端口无认证：仅绑定 127.0.0.1、每会话随机端口、进程退出即关闭；写入 `docs/security.md`。
 - 探针脚本与截图含本机界面信息，仅存本地 `src/probe/`，不上传。
+
+## Phase 1 复跑增补（2026-11-17，run `20261117T090104Z`）
+
+- 只读：Trae UIA 树仍无 chat composer/send；CDP `127.0.0.1:9222` 返回 2 个 target（workbench page + layout-engine worker）。
+- live（用户授权一次）：`cdp_send_test.mjs` 在 **Chat** 模式发送固定无害消息「请只回复 OK 两个字母，不要执行任何其他操作。」，读回 `OK`；`messages_sent=1`，发送前后 `git status` 仅含本线代码改动，工作区零变更。日志 `var/experiments/20261117T090104Z/trae_live_send.log`（gitignore）。
+- 微信负例刷新：按 PID + `EnumWindows` 找到可见窗口“微信”（`Qt51514QWindowIcon`），UIA 仅 4 节点（Window/2×Pane/TitleBar），无 Edit/Button；自绘聊天语义不可经 UIA 获取。
+- 原生靶应用：E1b 后台 9/9 光标 0 但 9/9 焦点切换；E1c 前台起步 9/9 仍出现瞬时焦点切换（`external_input=false`），其中 3 次 2 ms 轮询漏记、事件钩子 9/9 捕获；E2 停留曲线实测 57–138 ms，轮询/钩子均 9/9 检出、误报 0/3。
+- 结论与验收映射详见 `docs/experiments/background-control.md` 第 11 节；四态分类单测见 `tests/test_phase1_classification.py`。
