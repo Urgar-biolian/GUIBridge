@@ -116,7 +116,8 @@ def _result(
     return ActionResult(
         state=state,
         channel=Channel.UIA,
-        risk=InterferenceRisk.LOGICAL_ONLY,
+        # Measured native-test UIA risk is FOCUS_SWITCH (E1b/E1c), not LOGICAL_ONLY.
+        risk=InterferenceRisk.FOCUS_SWITCH,
         effect_verified=verified,
         evidence=evidence,
         focus_before=run.before,

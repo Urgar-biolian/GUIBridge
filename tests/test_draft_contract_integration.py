@@ -63,3 +63,13 @@ def test_native_invoke_failed_non_idempotent_denies_retry():
     assert cap.idempotent is False
     assert retry.allow_retry is False
     assert retry.requires_approval is True
+
+
+def test_native_invoke_unconfirmed_non_idempotent_denies_retry():
+    cap = load_capability_table()[("native-test", "invoke")]
+    # Action ran, no error, but effect not positively confirmed => UNCONFIRMED.
+    state = classify(_run(), verified=False, error=None, channel=Channel.UIA)
+    assert state is ResultState.UNCONFIRMED
+    retry = decide_retry(state, idempotent=cap.idempotent)
+    assert retry.allow_retry is False
+    assert retry.requires_approval is True

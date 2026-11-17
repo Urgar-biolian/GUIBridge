@@ -102,10 +102,12 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 |---|---|
 | `SUCCESS_NO_INTERFERENCE_OBSERVED` | 操作成功，且监测窗口内未观察到干扰 |
 | `SUCCESS_WITH_INTERFERENCE` | 操作成功，但观察到焦点切换/光标移动等干扰 |
-| `FAILED` | 操作失败 |
-| `UNCONFIRMED` | 结果无法确认（非幂等操作禁止自动重试） |
+| `FAILED` | 确认失败（抛出错误 / pattern 不可用等明确错误） |
+| `UNCONFIRMED` | 动作已执行、无错误，但未能正面确认成功；不得据此断言“确定失败”（非幂等操作禁止自动重试） |
 
 **表述纪律**：`SUCCESS_NO_INTERFERENCE_OBSERVED` 只表示“未观察到”，不能表述为“绝对无干扰”。文档与 UI 必须保留该限定。
+
+**分类映射（`classify()`）**：`error` 非空 → `FAILED`；`verified=True` → 两种成功态（按通道与干扰信号细分）；`verified=False` 且无 `error` → `UNCONFIRMED`。早期实现把“未确认成功”一律归 `FAILED`，会使 `UNCONFIRMED` 不可达、原则 6 的未确认分支形同虚设，且把“未确认”误报为“确定失败”；现已修正为保守映射（缺正面确认 ≠ 确定失败）。含单测 `tests/test_phase1_classification.py`。另：`src/probe/uia_exec.py` 的 `ActionResult.risk` 曾硬编码 `LOGICAL_ONLY`，与本机靶应用实测 `FOCUS_SWITCH`（E1b/E1c）矛盾，已改为 `FOCUS_SWITCH`；历史 run 为冻结证据不追溯改写，后续复跑按实测风险报告。
 
 **重试约束落地**：原则 6（非幂等未确认操作禁止自动重试）由草案 `packages/focusguard/retry_policy.py` 的 `decide_retry(state, idempotent, attempts, max_attempts)` 强制：`UNCONFIRMED`/`FAILED` 且非幂等一律 `allow_retry=False` 且 `requires_approval=True`；幂等操作仅在预算内可重试，预算耗尽转人工审批；两种成功态不重试。该约束在 Phase 2 接入执行器前为独立草案，含单测 `tests/test_retry_policy.py`（11 例）。
 
@@ -268,12 +270,12 @@ class ActionResult:
 
 - 基线 run `20261117T082451Z`、增补 run `20261117T090104Z`：`docs/experiments/background-control.md` 第 7、11 节。
 - 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）；精确计时复跑 run `20261117T093513Z` 最短可解析真实停留 15 ms（第 12.1 节）。
-- 四态分类单测：`tests/test_phase1_classification.py`（14 例）——含 `detect_unexpected_focus_switch` 聚合（轮询漏记、仅钩子捕获仍判干扰）与 `hook_dwell_ms` 精确计时（含 32 位回绕、缺失对返回 None）。
+- 四态分类单测：`tests/test_phase1_classification.py`（15 例）——含 `error→FAILED`、`verified=False` 无错误→`UNCONFIRMED`（四态可达、保守映射）、`detect_unexpected_focus_switch` 聚合（轮询漏记、仅钩子捕获仍判干扰）与 `hook_dwell_ms` 精确计时（含 32 位回绕、缺失对返回 None）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
 - 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
 - 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
-- 草案契约组合单测：`tests/test_draft_contract_integration.py`（4 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 非幂等禁重试。证明路由→分类→重试三草案契约可组合。
+- 草案契约组合单测：`tests/test_draft_contract_integration.py`（5 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 与 `UNCONFIRMED` 非幂等均禁重试。证明路由→分类→重试三草案契约可组合。
 - 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（4 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。

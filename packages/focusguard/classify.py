@@ -14,8 +14,13 @@ def classify(
     error: str | None,
     channel: Channel,
 ) -> ResultState:
-    if error or not verified:
+    """FAILED needs a confirmed error; lacking positive confirmation of success
+    without an error is UNCONFIRMED, not a claimed definite failure (principle 6
+    distinguishes the two for non-idempotent retry)."""
+    if error:
         return ResultState.FAILED
+    if not verified:
+        return ResultState.UNCONFIRMED
     if channel is Channel.FOREGROUND_INPUT:
         return ResultState.SUCCESS_WITH_INTERFERENCE
     if run.unexpected_focus_switch or run.cursor_displacement > 0:

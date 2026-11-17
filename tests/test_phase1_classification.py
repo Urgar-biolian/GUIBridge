@@ -24,9 +24,16 @@ def _run(*, focus_switch=False, cursor=0, external=False):
     )
 
 
-def test_unverified_or_error_is_failed():
-    assert classify(_run(), False, None, Channel.UIA) is ResultState.FAILED
+def test_error_is_failed():
     assert classify(_run(), True, "boom", Channel.UIA) is ResultState.FAILED
+    assert classify(_run(), False, "boom", Channel.UIA) is ResultState.FAILED
+
+
+def test_unverified_without_error_is_unconfirmed():
+    # Success not positively confirmed, no error => cannot confirm, not a claimed
+    # definite failure. Keeps the four-state UNCONFIRMED reachable (principle 6).
+    assert classify(_run(), False, None, Channel.UIA) is ResultState.UNCONFIRMED
+    assert classify(_run(), False, None, Channel.FOREGROUND_INPUT) is ResultState.UNCONFIRMED
 
 
 def test_physical_input_always_counts_as_interference():
