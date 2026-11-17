@@ -1,0 +1,67 @@
+{
+  "app_version": "3.6.13",
+  "window": {
+    "window_id": "trae-main",
+    "process_name": "Trae.exe",
+    "title": "Agui - TRAE",
+    "geometry": {"x": 0, "y": 0, "width": 1920, "height": 1040, "display": 1, "dpi_scale": 1.0}
+  },
+  "session_mode": "Agent",
+  "approval_mode": "auto",
+  "ide_mode": false,
+  "menu_open": false,
+  "conversation": "",
+  "reply_plan": [["思考中", 2], ["OK", 1]],
+  "elements": [
+    {
+      "selector": ".icube-mode-tab-item-ide",
+      "role": "tab",
+      "name": "IDE",
+      "text": "IDE",
+      "rect": [820, 12, 96, 28]
+    },
+    {
+      "selector": ".v2-agent-entry-btn",
+      "role": "button",
+      "name": "会话模式",
+      "text": "Agent",
+      "rect": [418, 690, 140, 32]
+    },
+    {
+      "selector": ".chat-input-v2-input-box-editable",
+      "role": "textbox",
+      "name": "聊天输入框",
+      "text": "",
+      "rect": [418, 700, 620, 60]
+    },
+    {
+      "selector": ".chat-input-v2-send-button",
+      "role": "button",
+      "name": "发送",
+      "text": "",
+      "disabled": true,
+      "rect": [1046, 764, 32, 32]
+    },
+    {
+      "selector": ".icd-model-select-trigger",
+      "role": "combobox",
+      "name": "模型选择",
+      "text": "GLM-4.7",
+      "rect": [800, 764, 120, 28]
+    },
+    {
+      "selector": "[data-testid=ai-chat-create-new-session]",
+      "role": "button",
+      "name": "新建会话",
+      "text": "",
+      "rect": [1010, 60, 28, 28]
+    },
+    {
+      "selector": ".ai-chat-v2-ide-root",
+      "role": "document",
+      "name": "会话容器",
+      "text": "",
+      "rect": [410, 60, 660, 620]
+    }
+  ]
+}
