@@ -1,7 +1,11 @@
 """Phase 1 four-state classification checks (draft semantics, pending B approval)."""
 
 from packages.focusguard.classify import classify
-from packages.focusguard.monitor import FocusRun, detect_unexpected_focus_switch
+from packages.focusguard.monitor import (
+    FocusRun,
+    detect_unexpected_focus_switch,
+    hook_dwell_ms,
+)
 from packages.focusguard.outcome import FocusSnapshot, ResultState
 from packages.routing.capability import Channel
 
@@ -85,3 +89,17 @@ def test_hook_only_detection_flows_to_interference_state():
         run.before.foreground_hwnd, run.foreground_events, run.hook_foreground_events
     )
     assert classify(run, True, None, Channel.UIA) is ResultState.SUCCESS_WITH_INTERFERENCE
+
+
+def test_hook_dwell_ms_precise_gap():
+    assert hook_dwell_ms([(1000, 200), (1012, 100)], 200, 100) == 12.0
+
+
+def test_hook_dwell_ms_missing_pair_returns_none():
+    assert hook_dwell_ms([], 200, 100) is None
+    assert hook_dwell_ms([(1000, 200)], 200, 100) is None
+    assert hook_dwell_ms([(1000, 100)], 200, 100) is None
+
+
+def test_hook_dwell_ms_handles_32bit_wrap():
+    assert hook_dwell_ms([(0xFFFFFFF0, 200), (0x00000005, 100)], 200, 100) == 21.0

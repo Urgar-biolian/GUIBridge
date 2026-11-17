@@ -94,9 +94,32 @@ def detect_unexpected_focus_switch(
     )
 
 
-def _foreground_hook_loop(events: list, ready: threading.Event, info: dict) -> None:
+def hook_dwell_ms(
+    hook_event_times: list[tuple[int, int]],
+    occluder_hwnd: int,
+    target_hwnd: int,
+) -> float | None:
+    """Precise foreground dwell from system event_time (ms), independent of
+    Python dispatch latency. Returns the occluder->target gap, or None if the
+    pair was not observed. event_time wraps at 32 bits; normalize the delta.
+    """
+    occ_ts = next((ts for ts, fg in hook_event_times if fg == occluder_hwnd), None)
+    if occ_ts is None:
+        return None
+    tgt_ts = next(
+        (ts for ts, fg in hook_event_times if fg == target_hwnd and ts != occ_ts),
+        None,
+    )
+    if tgt_ts is None:
+        return None
+    return float((tgt_ts - occ_ts) & 0xFFFFFFFF)
+
+
+def _foreground_hook_loop(events: list, event_times: list, ready: threading.Event, info: dict) -> None:
     def callback(hook, event, hwnd, id_object, id_child, event_thread, event_time):
-        events.append((time.time(), int(hwnd or 0)))
+        handle = int(hwnd or 0)
+        events.append((time.time(), handle))
+        event_times.append((int(event_time), handle))
 
     proc = WinEventProc(callback)
     handle = user32.SetWinEventHook(
@@ -131,6 +154,7 @@ class FocusRun:
     cursor_displacement: int = 0
     external_input_during_window: bool | None = None
     hook_foreground_events: list[tuple[float, int]] = field(default_factory=list)
+    hook_event_times: list[tuple[int, int]] = field(default_factory=list)
     event_hook_active: bool = False
 
 
@@ -161,6 +185,7 @@ class Win32FocusGuard:
         trace: list[tuple[float, int, int]] = []
         last_foreground = [before.foreground_hwnd]
         hook_events: list[tuple[float, int]] = []
+        hook_event_times: list[tuple[int, int]] = []
         hook_info: dict = {}
         hook_ready = threading.Event()
 
@@ -179,7 +204,7 @@ class Win32FocusGuard:
         sampler = threading.Thread(target=sample, daemon=True)
         hook_thread = threading.Thread(
             target=_foreground_hook_loop,
-            args=(hook_events, hook_ready, hook_info),
+            args=(hook_events, hook_event_times, hook_ready, hook_info),
             daemon=True,
         )
         sampler.start()
@@ -224,6 +249,7 @@ class Win32FocusGuard:
             cursor_displacement=displacement,
             external_input_during_window=external_input,
             hook_foreground_events=hook_events,
+            hook_event_times=hook_event_times,
             event_hook_active=bool(hook_info.get("handle")),
         )
 

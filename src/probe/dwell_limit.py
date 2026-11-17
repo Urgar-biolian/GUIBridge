@@ -25,7 +25,7 @@ for p in (str(ROOT), str(Path(__file__).parent)):
 import win32_helpers as wh  # noqa: E402
 import uia_exec as ux  # noqa: E402
 import run_experiments as rx  # noqa: E402
-from packages.focusguard.monitor import Win32FocusGuard  # noqa: E402
+from packages.focusguard.monitor import Win32FocusGuard, hook_dwell_ms  # noqa: E402
 
 ASFW_ANY = 0xFFFFFFFF
 wh.user32.AllowSetForegroundWindow.argtypes = [wh.wintypes.DWORD]
@@ -104,6 +104,7 @@ def main() -> int:
                     "requested_dwell_ms": dwell * 1000,
                     "actual_dwell_ms": actual,
                     "hook_dwell_ms": hook_dwell,
+                    "precise_dwell_ms": hook_dwell_ms(run.hook_event_times, occ_hwnd, target_hwnd),
                     "poll_detected": poll_hit,
                     "hook_detected": hook_hit,
                     "detected": poll_hit or hook_hit,
@@ -124,6 +125,7 @@ def main() -> int:
                     "any_detected": sum(1 for r in bucket if r["detected"]),
                     "actual_dwell_ms": [r["actual_dwell_ms"] for r in bucket],
                     "hook_dwell_ms": [r["hook_dwell_ms"] for r in bucket],
+                    "precise_dwell_ms": [r["precise_dwell_ms"] for r in bucket],
                     "external_input_true": sum(1 for r in bucket if r["external_input_during_window"]),
                 }
             )
@@ -150,12 +152,13 @@ def main() -> int:
             "contaminated_trials": len(all_trials) - len(clean),
             "min_actual_dwell_ms": min((r["actual_dwell_ms"] for r in clean if r["actual_dwell_ms"] is not None), default=None),
             "min_hook_dwell_ms": min((r["hook_dwell_ms"] for r in clean if r["hook_dwell_ms"] is not None), default=None),
+            "min_precise_dwell_ms": min((r["precise_dwell_ms"] for r in clean if r["precise_dwell_ms"] is not None), default=None),
         }
         (out_dir / "dwell_limit.json").write_text(
             json.dumps(rx.jsonable(result), ensure_ascii=False, indent=2), encoding="utf-8"
         )
         print(f"WROTE {out_dir / 'dwell_limit.json'}")
-        print(f"min_actual_dwell_ms={result['min_actual_dwell_ms']} min_hook_dwell_ms={result['min_hook_dwell_ms']} clean={result['clean_trials']}/{len(all_trials)}")
+        print(f"min_actual_dwell_ms={result['min_actual_dwell_ms']} min_hook_dwell_ms={result['min_hook_dwell_ms']} min_precise_dwell_ms={result['min_precise_dwell_ms']} clean={result['clean_trials']}/{len(all_trials)}")
         return 0
     finally:
         for tid in attached:

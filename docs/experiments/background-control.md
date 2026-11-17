@@ -270,6 +270,23 @@ E2 的 ~57 ms 下限来自 `quick_foreground` 每次调用都付 `ShowWindow`/`B
 - 实测停留由事件记录时间戳（`time.time()`）推算，含 Python 分发延迟；真实前台停留可能更短，检出结论以“记录到的停留”为准。
 - 复跑命令：`python -X utf8 src/probe/dwell_limit.py`。
 
+### 12.1 系统 event_time 精确计时（run `20261117T093513Z`）
+
+第 12 节的实测停留由 `time.time()` 推算，含 Python 分发延迟，可能低估或高估真实前台停留。为此给 FocusGuard 事件钩子增加系统 `event_time`（`SetWinEventHook` 回调自带的前台事件毫秒时间戳）采集：`FocusRun.hook_event_times` 与纯函数 `hook_dwell_ms()`（含 32 位回绕归一化，单测覆盖）。`dwell_limit.py` 同时报告 `precise_dwell_ms`。复跑 run `20261117T093513Z`：
+
+| 请求停留 | 精确停留 (ms, event_time) | 轮询/钩子检出 | 外部输入 |
+|---|---|---|---|
+| 0 ms ×5 | None / 31 / 63 / 47 / 16 | 5/5 | 0/5 |
+| 5 ms ×5 | 62 / 47 / 63 / 63 / 47 | 5/5 | 0/5 |
+| 10 ms ×5 | 63 / 47 / 32 / 15 / 32 | 5/5 | 0/5 |
+| 20 ms ×5 | 31 / 47 / 47 / 31 / 62 | 5/5 | 0/5 |
+| 50 ms ×5 | 62 / 62 / 63 / 63 / 62 | 5/5 | 0/5 |
+
+- 25/25 仍全部检出（轮询 25、钩子 25），0 外部输入污染。
+- 系统精确计时的最短可解析停留为 **15 ms**（`min_precise_dwell_ms=15.0`）；此前 `time.time()` 报出的 8.9/5.1 ms 含分发延迟，不作为真实停留下限。
+- **分辨率限制**：`event_time` 为 1 ms 分辨率，当遮挡窗与目标恢复事件落在同一毫秒 tick 时无法解析间隔（出现 1 个 `None`）。因此精确计时不能覆盖 <1 ms 的停留；结合 2 ms 轮询盲区，<2 ms 瞬时切换仍未实证覆盖。
+- 结论修正：FocusGuard 在真实停留 ≥15 ms（精确计时）与记录停留 ≥5 ms（`time.time()`）的切换上均 25/25 检出；更短停留受计时分辨率与采样间隔限制，未实证。
+
 ## 13. Trae 只读 CDP 焦点干扰实测（`trae_cdp_focus.py`，run `20261117T092712Z`）
 
 为收窄能力表中 Trae CDP 的 `unknown` 风险，新增探针 `src/probe/trae_cdp_focus.py`：用 `Win32FocusGuard` 包裹一次**只读** CDP `Runtime.evaluate`（`cdp_readonly_eval.mjs`，仅读 `document.title` 与会话 innerText 长度，**无点击、无输入、无消息**），目标窗口为 Trae 主窗口（hwnd 2887220，标题 `Agui - TRAE`）。5 次试验，每次前等待输入静默。原始数据 `var/experiments/20261117T092712Z/trae_cdp_focus.json`（gitignore）。
