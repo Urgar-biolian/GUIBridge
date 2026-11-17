@@ -64,7 +64,7 @@ G1 前的一次性替身（届时删除，改接 `perception.cdp` + `semantic.re
 ### 环境
 
 Python 3.12.9（`.venv`，`pip install -e ".[dev]"`）｜mcp SDK 2.3.0（`MCPServer`）｜Node 便携版
-`C:/Users/lenovo/tools/node`（v24.22.3，S4-b 用）｜无 Trae。
+`C:/Users/<you>/tools/node`（v24.22.3，S4-b 用）｜无 Trae。
 
 ---
 
@@ -143,7 +143,7 @@ CLI 亦已本机实测：把 demo-app 复制成独立仓库、剥掉参照实现
 
 ### 环境（本阶段新增）
 
-Node 便携版 `C:/Users/lenovo/tools/node/node.exe`（v24.22.3）用于真实 `node --test` 验收；
+Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `node --test` 验收；
 演示工作区默认落在 `%TEMP%/guibridge-demo-workspace`，seed 提交用逐命令 `-c user.name/-c user.email`，
 不触碰任何 git 配置。
 
@@ -219,8 +219,8 @@ Node 便携版 `C:/Users/lenovo/tools/node/node.exe`（v24.22.3）用于真实 `
 
 ### 环境（本阶段新增）
 
-- Node/npm 便携版在 `C:/Users/lenovo/tools/node`，**未进系统 PATH**：每条命令前
-  `export PATH="/c/Users/lenovo/tools/node:$PATH"`。
+- Node/npm 便携版在 `C:/Users/<you>/tools/node`，**未进系统 PATH**：每条命令前
+  `export PATH="/c/Users/<you>/tools/node:$PATH"`。
 - Vite 6 dev server 只监听 IPv6 `localhost`：`http://localhost:5173/` 可访问，`http://127.0.0.1:5173/` 连接被拒；
   `/api` 代理目标仍是 `127.0.0.1:8765`。`node_modules/`、`dist/` 已在 .gitignore 中，未入库。
 
