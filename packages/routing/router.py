@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .capability import Capability, Channel, InterferenceRisk
-from .policy import InterferencePolicy, is_allowed, requires_approval
+from .policy import InterferencePolicy, is_allowed, operation_requires_approval
 
 _RISK_RANK: dict[InterferenceRisk, int] = {
     InterferenceRisk.NONE: 0,
@@ -74,14 +74,14 @@ class StaticRouter:
         allowed = [
             channel
             for channel in ranked
-            if is_allowed(policy, capability.risk_of(channel), approved)
+            if is_allowed(policy, capability.risk_of(channel), approved, capability.impact)
         ]
         if not allowed:
             best = ranked[0]
             return ChannelDecision(
                 None,
                 capability.risk_of(best),
-                requires_approval(policy, capability.risk_of(best)),
+                operation_requires_approval(policy, capability.risk_of(best), capability.impact),
                 [],
                 "policy denies all supported channels",
             )
@@ -90,7 +90,7 @@ class StaticRouter:
         return ChannelDecision(
             chosen,
             capability.risk_of(chosen),
-            requires_approval(policy, capability.risk_of(chosen)),
+            operation_requires_approval(policy, capability.risk_of(chosen), capability.impact),
             allowed[1:],
             "selected by risk rank then channel priority",
         )

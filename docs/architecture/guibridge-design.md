@@ -50,7 +50,7 @@ GUIBridge 是面向 Windows 的通用桌面应用语义控制与跨 Agent 协作
 | `BALANCED` | `NONE`、`LOGICAL_ONLY`、`FOCUS_SWITCH` | `PHYSICAL_INPUT` | `UNKNOWN` |
 | `FOREGROUND_ALLOWED` | 全部已知风险（高影响动作仍走 SafetyGate 审批） | — | `UNKNOWN` |
 
-严格无干扰模式禁止未经批准的焦点切换、物理鼠标移动和键盘注入。策略只决定“通道是否可选”，高影响操作的审批由既有 `SafetyGate` 独立执行，两者叠加而非互相替代。
+严格无干扰模式禁止未经批准的焦点切换、物理鼠标移动和键盘注入。策略只决定“通道是否可选”，高影响操作的审批由既有 `SafetyGate` 独立执行，两者叠加而非互相替代。**草案路由层另内置影响维度**（见 3.6）：`OperationImpact.HIGH` 的操作即便落在 `NONE` 风险通道，未经批准也被 `is_allowed` 拒绝、`operation_requires_approval` 返回 True，使原则 7 在新契约层即可强制执行，而不只依赖冻结的 `SafetyGate`。
 
 ### 3.4 路由算法（Phase 1 使用静态能力表）
 
@@ -75,6 +75,15 @@ Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experime
 设计修正：能力表按“应用 × 操作 × 控件 × 目标前后台状态”实测风险；`STRICT_NO_INTERFERENCE` 下未批准的 UIA 焦点切换仍应被拒。UIA 的“光标零位移”与“无焦点干扰”必须分开报告，不得用前者替代后者。
 
 增补 run `20261117T090104Z` 的 E1c（前台起步对照）进一步表明：目标已在前台时，9/9 UIA 动作仍引发瞬时焦点切换（切走再切回，`external_input=false`），其中 3 次短到 2 ms 轮询漏记、由 `EVENT_SYSTEM_FOREGROUND` 事件钩子捕获。因此“前台起步可视为无焦点干扰”的假设不成立，风险声明必须覆盖前后台两种状态，且 FocusGuard 需以事件钩子补捉瞬时切换。
+
+### 3.6 操作影响维度（原则 7，草案）
+
+干扰风险描述“通道对宿主焦点/输入的影响”，与“操作本身的影响”正交。一个 `NONE` 风险的官方 API 删除调用、或一次真实消息发送，仍可能是高影响、非幂等操作。为此 `Capability` 增加操作级元数据：
+
+- `impact: OperationImpact`（`LOW`/`HIGH`，默认 `LOW`）：`HIGH` 表示改状态/非幂等/破坏性/发送真实消息，必须经用户审批；`LOW` 表示只读或可安全回退。
+- `idempotent: bool`（默认 `True`）：供重试策略（4.2、原则 6）判定是否允许自动重试。
+
+强制点：`policy.is_allowed(policy, risk, approved, impact)` 在 `impact=HIGH` 且未批准时直接拒绝（与 `UNKNOWN` 同级硬门），`operation_requires_approval(policy, risk, impact)` 对 `HIGH` 恒返回 True；`StaticRouter` 两处分支均改用该组合判定。因此高影响操作不会因通道无干扰而被自动放行。草案能力表已标注：`trae.send_task`、`wechat.send_message` 为 `high`/非幂等；只读接口与受控靶应用操作为 `low`。含单测 `tests/test_impact_approval.py`（25 例）。该维度为草案，Phase 2 接入执行器时与冻结 `SafetyGate` 叠加生效。
 
 ## 4. 核心能力 B：FocusGuard
 
@@ -239,6 +248,7 @@ class ActionResult:
 | Trae 四接口契约 | 第 5.2 节 | 草案（Phase 2 正式接入） |
 | 实测能力表 + 加载器 | `packages/routing/capabilities.draft.yaml`、`capability_table.py` | 草案（含单测） |
 | 重试策略（原则 6 落地） | `packages/focusguard/retry_policy.py`、第 4.2 节 | 草案（含单测） |
+| 操作影响维度 + 审批门（原则 7 落地） | `packages/routing/capability.py`、`policy.py`、`router.py`、第 3.6 节 | 草案（含单测） |
 
 ### 11.2 B 线 approve 检查项
 
@@ -252,6 +262,7 @@ class ActionResult:
 - [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae 只读接口已实测 `none`（run `20261117T092712Z`），而 `send_task` 发送点击仍 `unknown`（不假设 `logical_only`），并认领授权 live 测量任务。
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
 - [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
+- [ ] 确认原则 7 由草案路由层 `OperationImpact.HIGH` 审批门强制（高影响操作即便 `NONE` 风险也须批准），复核 `tests/test_impact_approval.py` 与能力表 `impact`/`idempotent` 标注；确认其与冻结 `SafetyGate` 叠加而非替代，`UNKNOWN` 风险即便批准仍不可用。
 
 ### 11.3 实测依据索引
 
@@ -261,6 +272,7 @@ class ActionResult:
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
 - 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
+- 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。

@@ -25,6 +25,18 @@ class InterferenceRisk(str, Enum):
     UNKNOWN = "unknown"
 
 
+class OperationImpact(str, Enum):
+    """Operation-level impact, independent of interference risk (principle 7).
+
+    HIGH = state-changing / non-idempotent / destructive / sends real messages;
+    must require user approval even on a NONE-risk channel. LOW = read-only or
+    safely reversible. Impact is a property of the operation, not the channel.
+    """
+
+    LOW = "low"
+    HIGH = "high"
+
+
 @dataclass(frozen=True)
 class Capability:
     """Measured capability for one app x operation. Unknown channels stay absent."""
@@ -35,6 +47,8 @@ class Capability:
     risk: Mapping[Channel, InterferenceRisk] = field(default_factory=dict)
     preconditions: Mapping[Channel, tuple[str, ...]] = field(default_factory=dict)
     unsupported_reason: str | None = None
+    impact: OperationImpact = OperationImpact.LOW
+    idempotent: bool = True
 
     def supported(self) -> list[Channel]:
         return [channel for channel, ok in self.channels.items() if ok]

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from .capability import Capability, Channel, InterferenceRisk
+from .capability import Capability, Channel, InterferenceRisk, OperationImpact
 
 DEFAULT_TABLE = Path(__file__).with_name("capabilities.draft.yaml")
 
@@ -30,6 +30,8 @@ def build_capability(entry: dict) -> Capability:
         channels=channels,
         risk=risk,
         unsupported_reason=entry.get("unsupported_reason"),
+        impact=OperationImpact(entry.get("impact", "low")),
+        idempotent=bool(entry.get("idempotent", True)),
     )
 
 

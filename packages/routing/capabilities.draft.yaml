@@ -2,11 +2,16 @@
 # Risk values are MEASURED in Phase 1 experiments, not assumed. Channels absent
 # from an entry were not measured and stay unavailable. UNKNOWN risk is never
 # auto-allowed (policy.py); it surfaces a measurement gap rather than guessing.
+# impact (low/high) and idempotent are operation-level metadata: HIGH impact
+# always requires user approval (principle 7) even on a NONE-risk channel;
+# idempotent feeds the retry policy (principle 6). Defaults: low / true.
 status: draft
 schema_version: 1
 entries:
   - app: native-test
     operation: invoke
+    impact: low
+    idempotent: false
     channels:
       uia: {supported: true, risk: focus_switch}
       foreground_input: {supported: true, risk: physical_input}
@@ -17,6 +22,8 @@ entries:
 
   - app: native-test
     operation: set_value
+    impact: low
+    idempotent: true
     channels:
       uia: {supported: true, risk: focus_switch}
       foreground_input: {supported: true, risk: physical_input}
@@ -27,6 +34,8 @@ entries:
 
   - app: native-test
     operation: toggle
+    impact: low
+    idempotent: false
     channels:
       uia: {supported: true, risk: focus_switch}
       foreground_input: {supported: true, risk: physical_input}
@@ -37,6 +46,8 @@ entries:
 
   - app: trae
     operation: send_task
+    impact: high
+    idempotent: false
     channels:
       app_protocol: {supported: true, risk: unknown}
       uia: {supported: false, risk: unknown}
@@ -53,6 +64,8 @@ entries:
 
   - app: trae
     operation: get_task_status
+    impact: low
+    idempotent: true
     channels:
       app_protocol: {supported: true, risk: none}
       uia: {supported: false, risk: unknown}
@@ -65,6 +78,8 @@ entries:
 
   - app: trae
     operation: read_task_result
+    impact: low
+    idempotent: true
     channels:
       app_protocol: {supported: true, risk: none}
       uia: {supported: false, risk: unknown}
@@ -76,6 +91,8 @@ entries:
 
   - app: wechat
     operation: send_message
+    impact: high
+    idempotent: false
     channels:
       uia: {supported: false, risk: unknown}
     unsupported_reason: >
