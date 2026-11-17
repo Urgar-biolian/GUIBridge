@@ -65,7 +65,7 @@
 
 - [x] 复核 agent-desktop 公开 README 的能力声明，替换“待核实”项（2026-11-17 访问 main 分支 README，§2/§3 已按公开声明更新；未声明者保留标注）。
 - [x] 记录其公开许可证与平台要求（Apache-2.0；macOS 13+/Windows 10 1809+/Ubuntu 24.04+；仅用于对比，不引入依赖）。
-- [ ] 补充一张“同一任务在三类应用上的通道可用性”实测对比（原生 / Electron / 自绘）；原生与 Electron 已有实测，自绘待补。
+- [x] 补充“同一任务在三类应用上的通道可用性”实测对比（原生 / Electron / 自绘）：原生 UIA 实测 `focus_switch`（E1b/E1c）、Electron Trae CDP 只读实测 `none`（run `20261117T092712Z`）、自绘靶应用 UIA 无内容语义节点（run `20261117T102927Z` `scan_selfdrawn.py`：仅 3 个非客户区标题栏按钮，`has_edit=false`、`content_button_count=0`，OCR/视觉仅定位）。三类负例/正例均入能力表草案。
 - [ ] 由 B 线复核本文件，确认无未授权源码引用、公开声明引用准确。
 
 ## 7. 来源

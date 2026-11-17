@@ -100,3 +100,20 @@ entries:
       no Edit/Button — run 20261117T090104Z E5 (PID-matched EnumWindows scan).
     evidence:
       - "run 20261117T090104Z E5: hwnd 133592 class Qt51514QWindowIcon, node_count 4, has_edit false, has_button false"
+
+  - app: selfdrawn-test
+    operation: invoke
+    impact: low
+    idempotent: false
+    channels:
+      uia: {supported: false, risk: unknown}
+    unsupported_reason: >
+      self-drawn Win32 target (GDI-painted client controls, no child HWND): UIA tree
+      exposes no EditControl and no content-area Button — only 3 non-client caption
+      buttons (minimize/maximize/close) under TitleBar, which are window-frame chrome
+      not app content. Run 20261117T102927Z scan_selfdrawn: node_count 7, has_edit
+      false, content_button_count 0 (native standard-control contrast: has_edit true,
+      content_button_count 1). Background semantic operation on app content is
+      unavailable; OCR/vision is locate-only.
+    evidence:
+      - "run 20261117T102927Z scan_selfdrawn: selfdrawn content_button_count 0, has_edit false; native contrast has_edit true, content_button_count 1"

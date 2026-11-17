@@ -224,7 +224,7 @@ class ActionResult:
 | 至少一个应用支持不移动物理鼠标的语义操作 | E1（原生 UIA）+ 已有 Trae CDP | `var/experiments/*.json` + Trae 探针 |
 | 记录焦点变化事件 | E2 | FocusGuard 事件日志 |
 | 检测目标控件操作是否成功 | E1/E3 | 状态回读 + 四态结果 |
-| 明确识别不支持后台操作 | E5（含微信 4.x / Trae UIA 负例） | capability scan 输出 |
+| 明确识别不支持后台操作 | E5（含微信 4.x / Trae UIA 负例）+ 自绘靶应用负例（run `20261117T102927Z`） | capability scan 输出 |
 | Trae 实际能力有测试证据 | E6（只读复跑 + 授权 live 无害消息） | `src/probe/PROBE_REPORT.md` 增补；Chat 模式读回 `OK`、工作区零变更 |
 | 所有实验可重复运行 | `src/probe/run_experiments.py` | 固定环境记录 + 原始 JSON |
 
@@ -277,7 +277,8 @@ class ActionResult:
 - 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）；精确计时复跑 run `20261117T093513Z` 最短可解析真实停留 15 ms（第 12.1 节）。
 - 四态分类单测：`tests/test_phase1_classification.py`（15 例）——含 `error→FAILED`、`verified=False` 无错误→`UNCONFIRMED`（四态可达、保守映射）、`detect_unexpected_focus_switch` 聚合（轮询漏记、仅钩子捕获仍判干扰）与 `hook_dwell_ms` 精确计时（含 32 位回绕、缺失对返回 None）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
-- 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
+- 实测能力表单测：`tests/test_capability_table.py`（8 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、自绘负例返回原因（`selfdrawn-test.invoke` 无支持通道）、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
+- 自绘靶应用能力扫描 run `20261117T102927Z`：`src/probe/selfdrawn_app.py`（GDI 自绘客户区控件、无子 HWND）+ `src/probe/scan_selfdrawn.py`。自绘窗口 UIA 树 7 节点：`has_edit=false`、`content_button_count=0`，仅 3 个非客户区标题栏按钮（最小化/最大化/关闭，TitleBar 下，属窗口框架 chrome 而非应用内容）；原生标准控件靶应用对照 `has_edit=true`、`content_button_count=1`。结论：自绘应用内容无 UIA 语义，后台语义操作不可用、OCR/视觉仅定位。已落能力表草案 `selfdrawn-test.invoke`（unsupported，含原因与证据）。补齐验收项 4 的第三类应用负例（原生/Electron/自绘）。
 - 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
 - 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
 - 草案契约组合单测：`tests/test_draft_contract_integration.py`（5 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 与 `UNCONFIRMED` 非幂等均禁重试。证明路由→分类→重试三草案契约可组合。
@@ -314,4 +315,4 @@ class ActionResult:
 - **R4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
 - **R5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
 
-**当前可执行证据**：207 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
+**当前可执行证据**：208 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）+ 自绘靶应用负例 run `20261117T102927Z`（内容无 UIA 语义）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。

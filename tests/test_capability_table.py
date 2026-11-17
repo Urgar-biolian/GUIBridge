@@ -49,6 +49,14 @@ def test_wechat_negative_returns_reason():
     assert "wechat" in decision.reason.lower()
 
 
+def test_selfdrawn_negative_returns_reason():
+    cap = _table()[("selfdrawn-test", "invoke")]
+    assert cap.supported() == []
+    decision = StaticRouter().route(cap, InterferencePolicy.FOREGROUND_ALLOWED, approved=True)
+    assert decision.channel is None
+    assert "self-drawn" in decision.reason.lower()
+
+
 def test_trae_app_protocol_unknown_risk_not_auto_allowed():
     cap = _table()[("trae", "send_task")]
     assert cap.risk_of(Channel.APP_PROTOCOL) is InterferenceRisk.UNKNOWN
