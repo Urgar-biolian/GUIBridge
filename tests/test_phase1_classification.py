@@ -1,7 +1,7 @@
 """Phase 1 four-state classification checks (draft semantics, pending B approval)."""
 
 from packages.focusguard.classify import classify
-from packages.focusguard.monitor import FocusRun
+from packages.focusguard.monitor import FocusRun, detect_unexpected_focus_switch
 from packages.focusguard.outcome import FocusSnapshot, ResultState
 from packages.routing.capability import Channel
 
@@ -58,3 +58,30 @@ def test_external_input_flag_alone_does_not_create_interference():
         classify(_run(external=True), True, None, Channel.UIA)
         is ResultState.SUCCESS_NO_INTERFERENCE_OBSERVED
     )
+
+
+def test_no_events_means_no_switch():
+    assert detect_unexpected_focus_switch(100, [], []) is False
+
+
+def test_events_equal_to_start_foreground_are_not_a_switch():
+    assert detect_unexpected_focus_switch(100, [(0.0, 100)], [(0.0, 100)]) is False
+
+
+def test_poll_only_switch_detected():
+    assert detect_unexpected_focus_switch(100, [(0.0, 200)], []) is True
+
+
+def test_hook_only_switch_detected_when_poll_misses():
+    # Phase 1 E1c: 2 ms poll recorded nothing, event hook caught the transient switch.
+    assert detect_unexpected_focus_switch(100, [], [(0.0, 200), (0.0, 100)]) is True
+
+
+def test_hook_only_detection_flows_to_interference_state():
+    run = _run()
+    run.foreground_events = []
+    run.hook_foreground_events = [(0.0, 200), (0.0, 100)]
+    run.unexpected_focus_switch = detect_unexpected_focus_switch(
+        run.before.foreground_hwnd, run.foreground_events, run.hook_foreground_events
+    )
+    assert classify(run, True, None, Channel.UIA) is ResultState.SUCCESS_WITH_INTERFERENCE

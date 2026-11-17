@@ -79,6 +79,21 @@ def _last_input_age_ms() -> float | None:
     return float((kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF)
 
 
+def detect_unexpected_focus_switch(
+    before_foreground: int,
+    poll_events: list[tuple[float, int]],
+    hook_events: list[tuple[float, int]],
+) -> bool:
+    """True if either sampler observed a foreground HWND other than the start.
+
+    The event hook can catch transient switches the 2 ms poll misses (Phase 1
+    E1c), so both sources are unioned rather than relying on the poll alone.
+    """
+    return any(
+        fg != before_foreground for _, fg in (poll_events + hook_events)
+    )
+
+
 def _foreground_hook_loop(events: list, ready: threading.Event, info: dict) -> None:
     def callback(hook, event, hwnd, id_object, id_child, event_thread, event_time):
         events.append((time.time(), int(hwnd or 0)))
@@ -185,8 +200,9 @@ class Win32FocusGuard:
         if after.foreground_hwnd != last_foreground[0]:
             events.append((after.ts, after.foreground_hwnd))
 
-        combined = events + hook_events
-        unexpected = any(fg != before.foreground_hwnd for _, fg in combined)
+        unexpected = detect_unexpected_focus_switch(
+            before.foreground_hwnd, events, hook_events
+        )
         displacement = max(
             (
                 max(abs(x - before.cursor_xy[0]), abs(y - before.cursor_xy[1]))

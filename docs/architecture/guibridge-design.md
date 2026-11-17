@@ -248,6 +248,6 @@ class ActionResult:
 ### 11.3 实测依据索引
 
 - 基线 run `20261117T082451Z`、增补 run `20261117T090104Z`：`docs/experiments/background-control.md` 第 7、11 节。
-- 四态分类单测：`tests/test_phase1_classification.py`（6 例）。
+- 四态分类单测：`tests/test_phase1_classification.py`（11 例）——含 `detect_unexpected_focus_switch` 聚合逻辑：轮询漏记、仅事件钩子捕获的瞬时切换仍判为干扰（E1c 发现的可执行证据）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
 - 代码提交：`4665ab8`（P0 实验改进）。
