@@ -303,12 +303,12 @@ class ActionResult:
 
 ### 11.5 B 线裁决清单（解锁 Phase 2 的决策议程）
 
-11.2 是“确认实测事实”的核对项；本节是 B 线需要**做出决定**的离散决策，每项给出选项与影响。G0 通过 = 下列 D1–D5 落定 + 11.2 事实核对完成 + 双人 approve 留痕。
+11.2 是“确认实测事实”的核对项；本节是 B 线需要**做出决定**的离散决策，每项给出选项与影响。编号用 R（裁决）以区别于 `docs/team-plan.md` 第 3 节已确认的历史决策 D1–D7。G0 通过 = 下列 R1–R5 落定 + 11.2 事实核对完成 + 双人 approve 留痕。
 
-- **D1 契约冻结**：是否把草案 Router/FocusGuard/分类/重试/影响门/桥接从“草案”转冻结？选项：(a) 全部冻结进入 Phase 2；(b) 先冻结 Router+FocusGuard+分类，重试/影响门/桥接随 Phase 2 迭代。影响：决定 Phase 2 可依赖的契约面。
-- **D2 MCP 信封是否扩展**（11.4 差异 1/2）：冻结两态信封无法表达 `UNCONFIRMED`/风险。选项：(a) 扩展 `api.md` 增加 `state`/`risk` 字段（契约改动，双人 approve，原则 6 语义对外保留）；(b) 不改 `api.md`，`UNCONFIRMED` 对外退化为失败、仅在引擎内部保留（`legacy_bridge` 已演示该退化）。影响：原则 6 的对外可见性。
-- **D3 外部输入下的效果归因**（开放问题 5）：非输入通道窗口内有外部输入时 `verified=True` 是否降级 `UNCONFIRMED`？`FOREGROUND_INPUT` 自注入与外部输入如何分离？选项：(a) 契约层内置降级 + 分离自注入标记；(b) 维持实验层“污染弃用”，契约层暂不降级。影响：四态归因严谨度。
-- **D4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
-- **D5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
+- **R1 契约冻结**：是否把草案 Router/FocusGuard/分类/重试/影响门/桥接从“草案”转冻结？选项：(a) 全部冻结进入 Phase 2；(b) 先冻结 Router+FocusGuard+分类，重试/影响门/桥接随 Phase 2 迭代。影响：决定 Phase 2 可依赖的契约面。
+- **R2 MCP 信封是否扩展**（11.4 差异 1/2）：冻结两态信封无法表达 `UNCONFIRMED`/风险。选项：(a) 扩展 `api.md` 增加 `state`/`risk` 字段（契约改动，双人 approve，原则 6 语义对外保留）；(b) 不改 `api.md`，`UNCONFIRMED` 对外退化为失败、仅在引擎内部保留（`legacy_bridge` 已演示该退化）。影响：原则 6 的对外可见性。
+- **R3 外部输入下的效果归因**（开放问题 5）：非输入通道窗口内有外部输入时 `verified=True` 是否降级 `UNCONFIRMED`？`FOREGROUND_INPUT` 自注入与外部输入如何分离？选项：(a) 契约层内置降级 + 分离自注入标记；(b) 维持实验层“污染弃用”，契约层暂不降级。影响：四态归因严谨度。
+- **R4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
+- **R5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
 
-**当前可执行证据**：195 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）；草案桥接/重试/影响门/完整性守护均有单测。D1–D4 为 B 线契约决策，D5 为用户授权决策；未决前不接入冻结模块。
+**当前可执行证据**：195 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）；草案桥接/重试/影响门/完整性守护均有单测。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
