@@ -110,3 +110,18 @@ def test_snapshots_record_the_elements_they_observed(plane):
     snapshot = plane.store.get_snapshot(result.after_snapshot_id)
     assert snapshot["window_id"] == plane.window_id
     assert ".chat-input-v2-input-box-editable" in {e["selector"] for e in snapshot["elements"]}
+
+
+def test_the_action_event_carries_its_own_before_and_after_evidence(plane):
+    """Replay reads events, and docs/api.md exposes no read-by-id snapshot route.
+
+    So the before/after summary has to travel inside the audit row, or the Dashboard can only show
+    opaque ids (dev-prompts S4: 事件回放含前后证据).
+    """
+    result = plane.executor.perform(plane.window_id, COMPOSER, "type", {"text": "hi"})
+    event = [e for e in plane.store.events(kind="action")][-1]
+    before, after = event["payload"]["snapshots"]
+    assert [entry["snapshot_id"] for entry in (before, after)] == [result.before_snapshot_id,
+                                                                   result.after_snapshot_id]
+    assert after["element_count"] == len(plane.store.get_snapshot(after["snapshot_id"])["elements"])
+    assert after["image_path"] is None  # simulated channel captures no pixels; the UI must not imply it did

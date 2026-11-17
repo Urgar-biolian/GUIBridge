@@ -103,6 +103,27 @@ def test_task_progress_and_result_are_readable_over_http(client, plane):
     assert len(result["reply_text"]) <= 3 and result["truncated"] is True
 
 
+def test_a_verifier_write_shows_up_in_the_status_endpoint(client, plane):
+    """`verified` usually arrives from another process (docs/agent.md step 5): the store is the authority.
+
+    The adapter only tracks what this process watched, so if `get_status` answered from memory alone a
+    Dashboard would list the task as verified while its detail panel kept insisting it is claimed_done.
+    """
+    task_id = client.post("/tasks", json={"project_path": "p", "task": TASK,
+                                          "allow_auto_approval": True}).json()["task_id"]
+    for _ in range(6):
+        if client.get(f"/tasks/{task_id}").json()["state"] == "claimed_done":
+            break
+    evidence = plane.store.record("verify", {"verified": True, "changed_files": ["index.html"]},
+                                  task_id=task_id, window_id=plane.window_id)
+    plane.store.set_task_state(task_id, "verified", evidence, actor="verifier")
+
+    detail = client.get(f"/tasks/{task_id}").json()
+    assert detail["state"] == "verified"
+    assert [step["state"] for step in detail["transitions"]][-1] == "verified"
+    assert evidence in detail["evidence"]
+
+
 def test_the_task_list_matches_the_store(client, plane):
     created = client.post("/tasks", json={"project_path": "p", "task": TASK,
                                          "allow_auto_approval": True}).json()

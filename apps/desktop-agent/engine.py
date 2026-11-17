@@ -93,10 +93,15 @@ class ControlPlane:
 
     def get_status(self, task_id: str) -> dict:
         rec = self.adapter.get_status(task_id)
-        return {"task_id": rec.task_id, "app": rec.app, "state": rec.state,
+        # The adapter only knows what this process observed; the store also carries the transitions the
+        # independent verifier wrote (docs/sql.md makes it the append-only authority). Without this
+        # overlay a `verified` task keeps reporting `claimed_done` over HTTP forever.
+        stored = self.store.get_task(task_id)
+        return {"task_id": task_id, "app": rec.app, "state": stored["state"] if stored else rec.state,
                 "signals": self.adapter.last_signals(task_id),
-                "transitions": rec.transitions,
-                "evidence": [t["evidence_id"] for t in rec.transitions if t["evidence_id"]]}
+                "transitions": stored["transitions"] if stored else rec.transitions,
+                "evidence": [t["evidence_id"] for t in (stored["transitions"] if stored else rec.transitions)
+                             if t["evidence_id"]]}
 
     def read_result(self, task_id: str, max_chars: int = 8000) -> dict:
         return self.adapter.read_result(task_id, max_chars)

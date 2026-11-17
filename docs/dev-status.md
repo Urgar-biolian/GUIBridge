@@ -146,3 +146,80 @@ CLI 亦已本机实测：把 demo-app 复制成独立仓库、剥掉参照实现
 Node 便携版 `C:/Users/lenovo/tools/node/node.exe`（v24.22.3）用于真实 `node --test` 验收；
 演示工作区默认落在 `%TEMP%/guibridge-demo-workspace`，seed 提交用逐命令 `-c user.name/-c user.email`，
 不触碰任何 git 配置。
+
+---
+
+## S4-b Dashboard、审批 UI 与事件回放
+
+**命令：`npm run build` → vue-tsc 无类型错误，vite 构建 36 modules（98.28 kB JS / 9.64 kB CSS）；
+`.venv/Scripts/python.exe -m pytest -m "not live" -q` → 175 passed, 5 deselected**
+（较 S3 新增 2 条：`test_actions.py` 1 条 + `test_desktop_agent_api.py` 1 条，都是下面「本阶段修的两个真问题」的回归）。
+
+### 页面（dev-prompts S4 第 3 项的四页）
+
+| 页面 | 组件 | 读取 | 写入 |
+|---|---|---|---|
+| 任务与时间线 | `apps/dashboard/src/views/TasksView.vue` | `GET /tasks`、`/tasks/{id}`、`/tasks/{id}/result`、事件流 | 无 |
+| 事件回放 | `views/ReplayView.vue` | `/api/events`（SSE，客户端按 kind/task_id/全文过滤 + 步进） | 无 |
+| 定位器与修复 | `views/LocatorsView.vue` | `GET /locators`（注册表 + 补丁） | `POST /locators/{semantic_id}/heal-review` |
+| 审批与窗口 | `views/ApprovalsView.vue` | `GET /approvals/pending`、`GET /windows`、`kind=mcp_call`/`approval_*` 事件 | `POST /approvals`、`POST /windows/{id}/whitelist`、`GET /windows/{id}/snapshot` |
+
+约束落实：dev-prompts 的「Dashboard 只读展示 + 审批操作；不新增控制通道」在代码里的形态是——没有任务提交入口，
+全部写操作只有审批授予、窗口白名单、修复补丁审核三种，且都走 `docs/api.md` 已冻结的 13 个端点，
+`apps/dashboard/vite.config.ts` 只把 `/api` 反代到 `127.0.0.1:8765`。前端零新增依赖（Vue3 + vue-tsc + Vite，沿用 S2 脚手架，无 router）。
+
+### 浏览器实测（`http://localhost:5173/` + 平面 `127.0.0.1:8765`，通道 `cdp-simulated`）
+
+- **闭环**：`approval_requested` → 批准 → 一次性 token → `approval_consumed`（历史显示「已用于一次动作」）→
+  任务 submitted/running/claimed_done → 独立验证器写 `verify` 事件 → 时间线第 4 步「已验证」，
+  evidence 指向 `ev_81f0460a1a774072`；`GET /tasks/{id}` 与任务列表同时翻绿，靠的是下面的状态修复。
+- **不可信文本**：`执行侧回复` 按钮调 `GET /tasks/{id}/result`，页面标注 `untrusted=true · claimed_done=true · 截断/全长`，
+  回复正文只进虚线 `<pre>`，不参与任何状态判定（docs/PRD.md 的「工具输出不可信」）。
+- **回放证据**：kind=action 过滤出 23 条，步进器显示 `1 / 23 条`，详情面板把前后快照渲染成
+  「动作前 snap_… · 元素 8 · 无截图（通道 image_path 为空）」——没有把不可信的回复文本当成证据列进去。
+- **修复补丁人审**：注入 2 条 pending 补丁，页面「通过/驳回」后状态变 `approved · dashboard` / `rejected · dashboard`；
+  通过只在对应 `app_version`（2.3.1）上新建行，3.6.13 原行不动；已审补丁不再给按钮（存储层对重复裁决抛 `PermissionError`，REST 回 409）。
+- **MCP 调用表**：用官方 SDK 的 `ClientSession` + `stdio_client` 真连 `main.py --mcp` 进程，
+  成功调用 `gui.list_windows` 与被拒调用 `trae.get_status → unknown_state` 同表显示（含被拒的调用）。
+- **快照捕获**：`GET /windows/trae-main/snapshot` 返回元素统计并明确写「截图：无（当前通道不产图）」，不用假图占位。
+
+### 本阶段修的两个真问题
+
+1. **跨进程的 `verified` 在 HTTP 上看不见。** `ControlPlane.get_status`（`apps/desktop-agent/engine.py:94`）原先只回
+   adapter 的内存记录，而 `verified` 通常由另一个进程里的验证器写进事件存储（docs/agent.md 第 5 步），
+   于是界面列表已绿、`GET /tasks/{id}` 仍报 `claimed_done`。现在以 `store.get_task()` 覆盖 state/transitions，
+   回归测试 `tests/test_desktop_agent_api.py::test_a_verifier_write_shows_up_in_the_status_endpoint`。
+2. **回放的「前后证据」只有一个裸 id。** `docs/api.md` 冻结的 REST 面没有按 id 读 snapshot 的端点，
+   前端拿着 `snap_xxx` 什么也显示不出来。改为在写入侧把摘要复制进事件：
+   `packages/execution/actions.py:98` 的 `_evidence_detail()` 随 `action` 事件带出
+   `{snapshot_id, ts, element_count, image_path}`（sql.md 规定快照只追加不改写，所以复制是安全的），
+   测试 `tests/test_actions.py::test_the_action_event_carries_its_own_before_and_after_evidence`。
+
+### 未达成的出口条件（不标 G 通过）
+
+- **dev-prompts S4 第 1、2 项不在本线。** `packages/semantic/resolver.py` 仍是 S1 的协议骨架，
+  仓库里没有生产代码调用 `propose_heal_patch()`（调用方只有测试与本阶段的演示注入）。
+  失效检测→重扫→唯一候选更新注册表由 A 引擎线负责；B 线交付的是这条流程的人工审核端（表 + REST + 页面）。
+  「歧义用例 100% 停止而非猜测」目前由 `tests/test_actions.py::test_ambiguous_candidates_stop_instead_of_guessing`
+  在 resolver 桩上覆盖，真实重扫未测。
+- **第 4 项 live 演示测试未执行**：无真实 Trae（gate G1 未过），窗口移动/缩放/跨显示器后重复 `send_task` ≥3 次
+  无法进行，5 条 live 用例保持 deselect。
+- **通道仍是 cdp-simulated**：元素、会话文本、状态全部来自 `tests/fixtures/trae/dom_ide_idle.json`，
+  页面顶部常驻黄条说明这一点，不把模拟读数当作 Trae 实测。
+- **演示工作区的文件改动由 git 完成，不是 GUI 通道完成。** 预 G1 通道只会改 fixture DOM，
+  所以 `examples/handoff_demo.py` 的模拟执行侧用提交把参照实现写进 demo 仓库，验证器核对的是
+  变更范围 + 验收命令，**不是**「Trae 真的动了文件」——这条限制也必须出现在演示解说里。
+
+### 契约边界（不改冻结文件）
+
+- 未新增 `GET /snapshots/{id}`：为回放证据选择「写入侧复制摘要」而不是扩面。若 S5 要展示原图像素，需走双人评审。
+- FastAPI 对畸形请求体返回 `{"detail": …}` 而非 `docs/api.md` 的三字段信封；前端在
+  `apps/dashboard/src/api.ts:191` 解包降级（`error_code/message/detail/HTTP <status>` 依次兜底）。
+  这是服务端既有行为，记录而不修改。
+
+### 环境（本阶段新增）
+
+- Node/npm 便携版在 `C:/Users/lenovo/tools/node`，**未进系统 PATH**：每条命令前
+  `export PATH="/c/Users/lenovo/tools/node:$PATH"`。
+- Vite 6 dev server 只监听 IPv6 `localhost`：`http://localhost:5173/` 可访问，`http://127.0.0.1:5173/` 连接被拒；
+  `/api` 代理目标仍是 `127.0.0.1:8765`。`node_modules/`、`dist/` 已在 .gitignore 中，未入库。

@@ -90,6 +90,26 @@ class ActionExecutor:
         if self.store is None:
             return
         self.store.record("action", {"semantic_id": semantic_id, "action": action, "success": success,
-                                     "verified": verified, "error_code": code, "message": message},
+                                     "verified": verified, "error_code": code, "message": message,
+                                     "snapshots": self._evidence_detail(evidence)},
                           evidence_paths=evidence, window_id=window_id, semantic_id=semantic_id,
                           action=action, approval_id=approval_id)
+
+    def _evidence_detail(self, snapshot_ids: list[str]) -> list[dict]:
+        """What the before/after snapshots contained, copied into the event itself.
+
+        `docs/api.md` freezes the REST surface without a read-by-id snapshot endpoint, so a replay
+        client would otherwise hold opaque ids; sql.md makes snapshots append-only, which is what makes
+        copying this summary into the audit event safe.
+        """
+        if self.store is None:
+            return []
+        detail = []
+        for snapshot_id in snapshot_ids:
+            row = self.store.get_snapshot(snapshot_id) if snapshot_id else None
+            if row is None:
+                continue
+            elements = row["elements"] or []
+            detail.append({"snapshot_id": snapshot_id, "ts": row["ts"], "image_path": row["image_path"],
+                           "element_count": len(elements)})
+        return detail
