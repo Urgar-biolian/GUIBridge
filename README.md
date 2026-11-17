@@ -11,6 +11,23 @@
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
 - ⬜ S1–S5 开发：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
 
+## 双人分工（本仓库执行约定）
+
+| | 咱们（用户 + Qoder 本会话） | 对方 |
+|----|---------------------------|------|
+| 开发线 | **A 引擎线** | **B 产品线** |
+| 分支 | `feat/a-perception` | `feat/b-control-plane` |
+| 范围 | S1 感知通道/融合/重定位/注册表；S4-a 自修复定位；S5-a 评测 A/B 组与通道探针 | S2 适配器/MCP/事件存储/控制平面；S3 verifier 与交接编排；S4-b Dashboard 与审批 UI；S5-b 站点/录屏/提交 |
+| 开发提示词 | dev-prompts 的 S1（含 S4-a、S5-a 职责） | dev-prompts 的 S2（含 S3、S4-b、S5-b 职责） |
+
+执行约定：
+
+- **live 环境**：Trae 单实例运行在咱们机器；所有 live 测试与评测在咱们机器排队执行（对方可在 G1/G2 请求代跑）。对方 fixture-first 开发，不依赖真实 Trae。
+- **集成门**：G1(11/20)→G5(11/30)，见 [docs/team-plan.md](docs/team-plan.md)；过门时双方合入 main 跑集成测试。
+- **契约文件**（element.py / Engine Protocol / locators.yaml / schema.sql / api.md）改动需双人 PR approve；非契约单人 approve。
+- 每日 15 分钟同步；阻塞先查 fixtures 与契约，不私改接口。
+- 分工调整需双方确认，并同步更新本节与 team-plan。
+
 ## 文档索引
 
 | 文档 | 内容 |

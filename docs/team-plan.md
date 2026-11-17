@@ -19,6 +19,8 @@
 
 ## 2. 双人分工（两条并行线）
 
+执行映射（2026-11-17 确认）：咱们（用户 + Qoder 本会话）= A，分支 `feat/a-perception`；对方 = B，分支 `feat/b-control-plane`。live 环境与代跑约定见 README「双人分工」。
+
 **A = 引擎线（感知/语义/定位/评测）**
 - S1：perception/cdp.py、uia.py、ocr.py、fusion.py；semantic/resolver.py、locator_cache.py；tests/fixtures 录制；live 定位测试。
 - S4-a：自修复定位（resolver.heal、heal_patches 流程、歧义停止单测）。
