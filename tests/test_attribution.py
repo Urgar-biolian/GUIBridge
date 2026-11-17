@@ -7,8 +7,10 @@ unverified effects are unchanged. Draft pending B-line approval; classify() is
 not replaced and nothing frozen is wired."""
 
 from packages.focusguard.attribution import classify_with_attribution
+from packages.focusguard.classify import classify
 from packages.focusguard.monitor import FocusRun
 from packages.focusguard.outcome import FocusSnapshot, ResultState
+from packages.focusguard.retry_policy import decide_retry
 from packages.routing.capability import Channel
 
 
@@ -63,3 +65,43 @@ def test_error_stays_failed_regardless_of_external_input():
 def test_unverified_effect_stays_unconfirmed():
     state = classify_with_attribution(_run(external=False), False, None, Channel.UIA)
     assert state is ResultState.UNCONFIRMED
+
+
+# Composition with principle 6 (retry_policy): a pollution-downgraded effect must
+# feed the retry decision, not be treated as a clean success.
+
+
+def test_pollution_downgraded_non_idempotent_denies_auto_retry():
+    run = _run(external=True, focus_switch=True)
+    state = classify_with_attribution(run, True, None, Channel.UIA)
+    assert state is ResultState.UNCONFIRMED
+    decision = decide_retry(state, idempotent=False)
+    assert decision.allow_retry is False
+    assert decision.requires_approval is True
+
+
+def test_pollution_downgraded_idempotent_may_retry_within_budget():
+    run = _run(external=True, focus_switch=True)
+    state = classify_with_attribution(run, True, None, Channel.UIA)
+    decision = decide_retry(state, idempotent=True, attempts=0)
+    assert decision.allow_retry is True
+
+
+def test_clean_success_non_idempotent_needs_no_retry():
+    run = _run(external=False, focus_switch=True)
+    state = classify_with_attribution(run, True, None, Channel.UIA)
+    assert state is ResultState.SUCCESS_WITH_INTERFERENCE
+    decision = decide_retry(state, idempotent=False)
+    assert decision.allow_retry is False
+    assert decision.requires_approval is False
+
+
+def test_attribution_adds_approval_guard_over_plain_classify():
+    # Same polluted run: plain classify() calls it success (no approval flag),
+    # attribution downgrades to UNCONFIRMED so a non-idempotent op needs approval.
+    run = _run(external=True, focus_switch=True)
+    plain = classify(run, True, None, Channel.UIA)
+    assert plain is ResultState.SUCCESS_WITH_INTERFERENCE
+    assert decide_retry(plain, idempotent=False).requires_approval is False
+    guarded = classify_with_attribution(run, True, None, Channel.UIA)
+    assert decide_retry(guarded, idempotent=False).requires_approval is True
