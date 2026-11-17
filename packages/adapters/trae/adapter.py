@@ -58,12 +58,45 @@ class TraeAdapter(AppAdapter):
                                verification="session_mode_selected")
         self._require(result, "session_mode_selected", "not_submitted")
 
-    def force_manual_approval(self, approval_token: str | None = None) -> None:
-        """PROBE_REPORT F9: a mis-clicked mode menu silently ran Agent+auto-approval. Manual is the default."""
-        if self.channel.find(self.window_id, states.AUTO_APPROVAL_TRIGGER) is None:
-            return
-        result = self._perform("trae.chat.approval_mode", "click", approval_token=approval_token)
-        self._require(result, "approval_mode_manual", "approval_required")
+    def force_manual_approval(self, approval_token: str | None = None) -> str:
+        """Read the approval trigger, switch only when it reads auto, and never leave the outcome unsaid.
+
+        F9 is why this may not return silently: a mis-clicked mode menu once ran an Agent task under
+        auto-approval. F10 is why the outcome can be `unverified:*`: on the probed build the trigger's
+        menu does not open over CDP, so a click is not always confirmable. An unreadable label is
+        recorded and only fatal for agent mode; an approved switch that fails to produce a readable
+        manual label stays fatal, because a human already granted it.
+        """
+        state = self._read_approval_state()
+        if state == "manual":
+            return self._record_approval_read("manual_confirmed", state, clicked=False)
+        if state == "auto":
+            result = self._perform("trae.chat.approval_mode", "click", approval_token=approval_token)
+            if not result.verified:
+                self._record_approval_read("unverified:menu_not_confirmed", state, clicked=True)
+                raise AdapterError(result.error_code or "approval_required",
+                                   f"approval mode post-condition not satisfied: "
+                                   f"{result.error_code or 'unknown reason'}")
+            after = self._read_approval_state()
+            if after != "manual":
+                self._record_approval_read("unverified:manual_label_unreadable", after, clicked=True)
+                raise AdapterError("approval_required",
+                                   f"approval mode still reads {after!r} after an approved switch")
+            return self._record_approval_read("manual_confirmed", after, clicked=True)
+        return self._record_approval_read(f"unverified:trigger_{state}", state, clicked=False)
+
+    def _read_approval_state(self) -> str:
+        return states.approval_state(
+            bool(self.channel.find(self.window_id, states.AUTO_APPROVAL_TRIGGER)),
+            bool(self.channel.find(self.window_id, states.MANUAL_APPROVAL_TRIGGER)),
+            bool(self.channel.find(self.window_id, states.APPROVAL_TRIGGER_CLASS)),
+        )
+
+    def _record_approval_read(self, outcome: str, state: str, clicked: bool) -> str:
+        self.store.record("approval_mode_read", {"outcome": outcome, "trigger_state": state,
+                                                 "clicked": clicked, "ts": _iso()},
+                          window_id=self.window_id)
+        return outcome
 
     # task operations
 
@@ -85,8 +118,15 @@ class TraeAdapter(AppAdapter):
         try:
             self.ensure_ide_mode()
             self.select_chat_mode(mode)
-            if not allow_auto_approval:
-                self.force_manual_approval(approval_token)
+            if allow_auto_approval:
+                approval_read = "auto_allowed"
+            else:
+                approval_read = self.force_manual_approval(approval_token)
+                if mode == "agent" and approval_read != "manual_confirmed":
+                    raise AdapterError("approval_required",
+                                       f"agent mode needs the manual approval label confirmed, "
+                                       f"read {approval_read!r}")
+            self.tasks[task_id]["approval_mode_read"] = approval_read
             self._perform("trae.chat.new_session", "click")
             typed = self._perform("trae.chat.composer", "type", {"text": task})
             self._require(typed, "focusable", "not_submitted", failure_class="focus_failed")

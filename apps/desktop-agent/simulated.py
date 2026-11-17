@@ -53,15 +53,21 @@ class SimulatedTrae:
             raise LookupError(f"no such window: {window_id}")
         return dict(self.window)
 
+    def _trigger(self, label: str) -> dict:
+        return {"selector": f"button[aria-label='{label}']", "role": "button", "name": label,
+                "text": label, "disabled": False}
+
     def _matches(self, selector: str) -> list[dict]:
         if selector == MODE_MENU:
             return [{"selector": MODE_MENU, "role": "menu", "name": "session modes", "text": "",
                      "children": ["Chat", "Ask", "Agent"]}] if self.menu_open else []
         if selector == "button[aria-label='自动审批']":
-            if self.approval_mode != "auto":
-                return []
-            return [{"selector": selector, "role": "button", "name": "自动审批", "text": "自动审批",
-                     "disabled": False}]
+            return [self._trigger("自动审批")] if self.approval_mode == "auto" else []
+        if selector == "button[aria-label='手动审批']":
+            return [self._trigger("手动审批")] if self.approval_mode == "manual" else []
+        if selector == "[class*=permissionModeTrigger]":
+            # One visible trigger carrying the current mode as its label (probe run 20261117T135355Z).
+            return [self._trigger("自动审批" if self.approval_mode == "auto" else "手动审批")]
         element = self.elements.get(selector)
         if element is None:
             return []
@@ -84,9 +90,7 @@ class SimulatedTrae:
                 item["disabled"] = not self.composer_text
         if self.menu_open:
             live.append({"selector": MODE_MENU, "role": "menu", "name": "session modes", "text": ""})
-        if self.approval_mode == "auto":
-            live.append({"selector": "button[aria-label='自动审批']", "role": "button", "name": "自动审批",
-                         "text": "自动审批", "disabled": False})
+        live.append(self._trigger("自动审批" if self.approval_mode == "auto" else "手动审批"))
         return live
 
     def screenshot(self, window_id: str) -> str | None:

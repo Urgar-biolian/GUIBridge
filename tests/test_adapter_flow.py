@@ -8,6 +8,7 @@ gate is unsatisfied. Real-desktop behaviour is exercised by tests/test_live_trae
 from pathlib import Path
 
 import pytest
+from adapters.trae import states
 from adapters.trae.adapter import AdapterError
 
 from main import build_plane
@@ -24,6 +25,16 @@ def approval(plane, semantic_id="trae.chat.approval_mode", action="click"):
 
 def actions_of(plane):
     return [entry["action"] for entry in plane.channel.actions]
+
+
+def approval_reads(plane):
+    return [event["payload"] for event in plane.store.events(kind="approval_mode_read")]
+
+
+def hide_approval_labels(plane, hidden: set[str]) -> None:
+    """Make selected approval-trigger selectors unresolvable, the way a renamed control would."""
+    real = plane.channel.find
+    plane.channel.find = lambda window_id, selector: None if selector in hidden else real(window_id, selector)
 
 
 def test_auto_approval_blocks_a_chat_task_until_a_human_acts(plane):
@@ -99,7 +110,6 @@ def test_running_then_claimed_done_reads_back_the_reply(plane):
     assert seen[0] == "running"
     assert seen[-1] == "claimed_done"
     assert "unknown" not in seen and "verified" not in seen
-
     result = plane.adapter.read_result(record.task_id)
     assert result["untrusted"] is True
     assert result["claimed_done"] is True
@@ -169,3 +179,65 @@ def test_an_unknown_task_id_is_reported_as_unknown_state(plane):
 def test_probe_channels_keep_the_silently_broken_cli_as_a_candidate_only(plane):
     assert plane.adapter.probe_channels() == {"cdp": True, "cli_chat": False, "reply_archive": False}
     assert set(plane.adapter.capabilities()) == {"send_task", "get_status", "read_result"}
+
+
+def test_an_already_manual_trigger_is_confirmed_without_a_click(plane):
+    plane.channel.approval_mode = "manual"
+    record = plane.adapter.send_task(PROJECT, TASK)
+    assert record.state == "submitted"
+    assert [entry for entry in plane.channel.actions
+            if entry.get("selector") in (states.AUTO_APPROVAL_TRIGGER, states.MANUAL_APPROVAL_TRIGGER)] == []
+    assert approval_reads(plane)[0]["outcome"] == "manual_confirmed"
+    assert approval_reads(plane)[0]["clicked"] is False
+    assert plane.store.list_approvals() == []
+
+
+def test_a_trigger_that_cannot_be_read_is_recorded_not_skipped(plane):
+    hide_approval_labels(plane, {states.AUTO_APPROVAL_TRIGGER, states.MANUAL_APPROVAL_TRIGGER,
+                                states.APPROVAL_TRIGGER_CLASS})
+    record = plane.adapter.send_task(PROJECT, TASK)
+    assert record.state == "submitted"
+    assert approval_reads(plane)[0]["outcome"] == "unverified:trigger_absent"
+    assert "submit" in actions_of(plane)
+
+
+def test_a_trigger_with_an_unreadable_label_says_so(plane):
+    hide_approval_labels(plane, {states.AUTO_APPROVAL_TRIGGER, states.MANUAL_APPROVAL_TRIGGER})
+    plane.adapter.send_task(PROJECT, TASK)
+    assert approval_reads(plane)[0]["outcome"] == "unverified:trigger_unreadable"
+
+
+def test_an_approved_switch_that_stays_auto_is_fatal(plane):
+    """F10: the click lands but no readable manual label follows, so nothing is submitted."""
+    hide_approval_labels(plane, {states.MANUAL_APPROVAL_TRIGGER})
+    with pytest.raises(AdapterError) as exc:
+        plane.adapter.send_task(PROJECT, TASK, approval_token=approval(plane))
+    assert exc.value.code == "approval_required"
+    assert "submit" not in actions_of(plane)
+    assert approval_reads(plane)[0]["outcome"] == "unverified:menu_not_confirmed"
+    assert plane.store.list_tasks()[0]["state"] == "failed"
+
+
+def test_agent_mode_needs_the_manual_label_confirmed(plane):
+    """F9 is the reason: agent mode must never run on an approval state we could not read."""
+    hide_approval_labels(plane, {states.AUTO_APPROVAL_TRIGGER, states.MANUAL_APPROVAL_TRIGGER,
+                                states.APPROVAL_TRIGGER_CLASS})
+    with pytest.raises(AdapterError) as exc:
+        plane.adapter.send_task(PROJECT, TASK, mode="agent", approval_token=approval(plane))
+    assert exc.value.code == "approval_required"
+    assert "unverified:trigger_absent" in exc.value.message
+    assert "submit" not in actions_of(plane)
+
+
+def test_a_trigger_that_keeps_reporting_auto_after_the_switch_is_fatal(plane):
+    """Both labels resolving is a broken read, not a confirmed one, so nothing is submitted."""
+    real = plane.channel.find
+    plane.channel.find = lambda window_id, selector: (
+        {"selector": selector, "role": "button", "name": "自动审批", "text": "自动审批", "disabled": False}
+        if selector == states.AUTO_APPROVAL_TRIGGER else real(window_id, selector))
+    with pytest.raises(AdapterError) as exc:
+        plane.adapter.send_task(PROJECT, TASK, approval_token=approval(plane))
+    assert exc.value.code == "approval_required"
+    assert "unverified:manual_label_unreadable" in approval_reads(plane)[0]["outcome"]
+    assert "submit" not in actions_of(plane)
+    assert plane.store.list_tasks()[0]["state"] == "failed"
