@@ -1,70 +1,107 @@
-# 开发进度与双人并行计划
+# 开发进度与双人并行计划（任务书对齐版）
 
-基线日期：2026-11-17｜交付窗口：11/18–30（14 天重新基线，PRD §11）
+基线日期：2026-11-17｜交付窗口：11/18–30
+本文件替代旧版进度表；旧版把 S3/S5 标为未开始，与仓库实际不符，已修正。
 
-## 1. 当前进度
+## 1. 当前真实进度
 
-| 项 | 状态 | 证据 |
-|----|------|------|
-| S0 技术探针 | ✅ 完成 | probe/PROBE_REPORT.md：GO，CDP 优先路线；闭环实测 |
-| 方案评审 | ✅ 完成 | 外部引用 5/5 属实；3 处判断修正 |
-| PRD / 开发提示词 | ✅ 完成 | docs/PRD.md、docs/dev-prompts.md |
-| 项目骨架 | ✅ 完成 | 单测 4 通过；模块可导入；Dashboard 浏览器实测+构建通过 |
-| 契约与文档 | ✅ 完成 | element.py / Engine Protocol / locators.yaml / schema.sql / api.md |
-| S1 感知与语义引擎 | ✅ 完成（11/17，早于 G1） | feat/a-perception `0e46c61`；单测 32 通过；live 只读定位 3 连过；融合冲突用例返回 conflict |
-| S2 适配器与 MCP | ✅ 完成（11/17，A 线补齐） | 事件存储/安全门/动作执行/Trae 适配器/Engine/MCP 8 工具/桌面代理；单测 83；live MCP 闭环读回 OK，工作区零变更 |
-| S3 交接与验证 | ⬜ 未开始 | dev-prompts S3 |
-| S4 自修复与 Dashboard | ✅ A 线 S4-a（11/17，`c92f3b4`）；S4-b Dashboard 补齐（11/17） | heal：hint 重扫/唯一候选/复验/pending 补丁；歧义 100% 停止；live 3 轮过。Dashboard：任务时间线/SSE 回放/定位器与补丁审核/审批 token，浏览器实测通过 |
-| S5 基准与提交 | ⬜ 未开始 | dev-prompts S5 |
+分支 `feat/a-perception`，HEAD `0f1a4d5`，工作树干净，远端一致。
 
-## 2. 双人分工（两条并行线）
+| 阶段 | 状态 | 证据 |
+|---|---|---|
+| S0 技术探针 | 完成 | `src/probe/PROBE_REPORT.md` F1–F12；GO，CDP 优先；提交 `fdde728` |
+| 方案评审 | 完成 | 外部引用 5/5 属实；3 处判断修正 |
+| PRD / 开发提示词 | 完成 | `docs/PRD.md`、`docs/dev-prompts.md` |
+| 项目骨架 | 完成 | 单测通过；模块可导入；Dashboard 构建通过 |
+| 契约与文档 | 完成（旧契约） | `element.py` / Engine Protocol / `locators.yaml` / `schema.sql` / `api.md` |
+| S1 感知与语义 | 完成 | `0e46c61`；单测 32；live 只读定位 3 连过 |
+| S2 适配器与 MCP | 完成 | `ce2e37b`；单测 83；live MCP 闭环读回 OK，工作区零变更 |
+| S3 交接与验证 | 完成 | `80886e3`；verifier + 隔离 demo + 模拟执行链；live agent 模式受安全约束未执行 |
+| S4-a 自修复 | 完成 | `c92f3b4`；歧义停止单测；live 3 轮通过 |
+| S4-b Dashboard | 完成（降级为可选展示） | `1ecf972`；浏览器实测通过 |
+| S5 基准与提交 | 完成（DOM fixture 基准） | `0f1a4d5`；A/B/C 原始 JSON + benchmark 文档；站点/录屏未发布 |
 
-执行映射（2026-11-17 确认）：咱们（用户 + Qoder 本会话）= A，分支 `feat/a-perception`；对方 = B，分支 `feat/b-control-plane`。live 环境与代跑约定见 README「双人分工」。
+## 2. 任务书对齐后的范围调整
 
-**A = 引擎线（感知/语义/定位/评测）**
-- S1：perception/cdp.py、uia.py、ocr.py、fusion.py；semantic/resolver.py、locator_cache.py；tests/fixtures 录制；live 定位测试。
-- S4-a：自修复定位（resolver.heal、heal_patches 流程、歧义停止单测）。
-- S5-a：tests/bench A/B 组脚本与原始记录；通道能力探针维护。
-- 产出物：通道 SDK + 定位服务 + 评测数据。
+- 现有 S1–S5 定位为**预研原型资产**，不作为参赛交付基线。
+- 新增 Phase 0（规划与骨架）与 Phase 1（独立可行性验证），优先补齐任务书验收。
+- Dashboard 不再是 Phase 1 优先项；`engine` / `mcp_gateway` / Dashboard 在 Phase 1 冻结。
+- 新交付：`docs/research/competitor-analysis.md`、`docs/research/originality-log.md`、`docs/architecture/guibridge-design.md`、`docs/experiments/background-control.md`、`src/probe/`、`tests/`。
 
-**B = 产品线（适配器/控制平面/交接/展示）**
-- S2：adapters/trae（states、adapter）、execution（actions、safety）、events/store.py、mcp/server.py、desktop-agent（托管启动/审批/SSE）。
-- S3：verifier、examples/demo-app 隔离仓库、handoff_demo 编排。
-- S4-b：Dashboard 全页面 + 审批 UI + 事件回放。
-- S5-b：演示站点（Qoder Sites）、录屏、benchmark.md 汇总、architecture/security 定稿、提交检查。
-- 产出物：MCP 闭环 + 端到端演示 + 参赛交付。
+## 3. 已确认决策（D1–D7）
 
-## 3. 并行解耦机制
+| ID | 决策 | 落地 |
+|---|---|---|
+| D1 | 原生靶应用用 ctypes Win32（纯 Python）；WinForms 为备选 | `src/probe/native_test_app.py` |
+| D2 | `probe/` 迁移到 `src/probe/` | 已执行 `git mv`，引用已修正 |
+| D3 | Phase 1 冻结 engine/MCP/Dashboard | 只新增 `routing` / `focusguard` / `uia_channel` 草案 |
+| D4 | UIA 绑定沿用 `uiautomation` | 已是依赖 |
+| D5 | 原生 UIA 优先，Electron 走 CDP | 写入架构文档与能力表 |
+| D6 | 竞品分析仅用公开资料，不复制源码 | 写入 originality-log |
+| D7 | 新契约需双人 approve | 草案标注，未冻结 |
 
-- **契约冻结**（framework.md 清单）：数据模型、Engine Protocol、注册表格式、schema、api.md 已冻结于骨架；B 在 A 完成 S1 前用 `tests/fixtures/` 录制快照 mock 通道开发状态机与 MCP。
-- **集成门**：
-  - G1（11/20 EOD）：A 交付通道 SDK + live 定位 3 连过；B 的 fixture 单测全绿。双方对接 resolver↔actions。
-  - G2（11/23 EOD）：MCP send→status→read live 闭环（B 主调，A 陪跑定位问题）。
-  - G3（11/25 EOD）：端到端 verified（S3）。
-  - G4（11/27 EOD）：窗口变化演示 + 自修复歧义用例 + Dashboard 回放。
-  - G5（11/30）：评测数据 + 站点 + 录屏 + 提交。
-- **每日同步** 15 分钟：阻塞、契约变更请求、live 环境占用（Trae 单实例，live 测试排队）。
-- **分支**：feat/a-* / feat/b-* → Gitee PR → 双人 approve（契约文件）或单人 approve（非契约）→ main。
+## 4. 阶段计划
 
-## 4. 里程碑日历
+### Phase 0（11/18，进行中）
 
-| 日期 | A | B | 门 |
-|------|---|---|----|
-| 11/18–19 | CDP/UIA 通道 + 融合 | store/safety/actions + 状态机 fixture 单测 | |
-| 11/20 | OCR + resolver + 注册表 + live 定位 | MCP server + desktop-agent 骨架接 fixture | G1 |
-| 11/21–22 | 定位稳定性（窗口几何）+ fixtures 扩充 | 适配器 live 前置/提交/状态 | |
-| 11/23 | 陪跑集成 | MCP 闭环 live | G2 |
-| 11/24–25 | bench 脚本雏形 | verifier + demo-app + 编排 | G3 |
-| 11/26–27 | 自修复 + 歧义单测 | Dashboard + 审批 UI + 回放 | G4 |
-| 11/28–29 | A/B/C 评测执行 | 站点 + 录屏 + 文档定稿 | |
-| 11/30 | 评测复核 | 提交检查 | G5 |
+- 文档骨架：架构、竞品、原创性、实验方案。
+- `src/probe` 迁移与引用修正。
+- `packages/routing`、`packages/focusguard`、`packages/execution/uia_channel.py` 空接口。
+- `src/probe/native_test_app.py` 骨架。
+- 门 G0：文档与契约草案完成，B 线确认 D1–D7 与契约范围。
 
-## 5. 风险与预案
+### Phase 1（11/18–22，A 线主导）
+
+1. E1 靶应用 + UIA Invoke/Value/Toggle + 状态回读。
+2. E2 FocusGuard 快照 + 前台事件 + 检出率。
+3. E3 UIA vs SendInput 对照。
+4. E4 遮挡/移动/缩放/DPI。
+5. E5 能力扫描与负例（含微信 4.x、Trae UIA）。
+6. E6 Trae 探针复跑，更新证据。
+7. 可重复 runner + 原始 JSON + 填写 `background-control.md`。
+8. 原创性日志与竞品分析定稿（仅公开资料）。
+
+门 G1（11/22）：六条验收均有真实数据、可复跑、无伪造；未达标项显式标注。
+
+### Phase 2（11/23–27，整合）
+
+- Router/FocusGuard 接入 engine 与 MCP（需契约双批）。
+- Trae 四接口前置/后置/证据形式化；`verify_code_changes` 接入。
+- 窗口移动 live 重复发送、agent 模式编辑演示（均需用户显式授权）。
+- Dashboard 作为可选展示，不做验收前置条件。
+
+### Phase 3（11/28–30，交付）
+
+- 站点/录屏（对外可见，需用户确认）。
+- 依赖许可证完整审计、提交检查。
+
+## 5. 双人分工
+
+A（用户 + 本会话，分支 `feat/a-perception`）：
+- 原生靶应用、UIA 执行、FocusGuard 传感、capability scan、Router、实验 runner。
+- Trae 探针维护与 live 测试排队。
+
+B（对方，分支 `feat/b-control-plane`）：
+- FocusGuard 结果整合、Trae 接口文档形式化、三篇研究文档撰写与复核。
+- 原创性/竞品分析复核、依赖许可证审计、交付材料。
+
+集成门：G0（11/18）→ G1（11/22）→ G2 整合（11/25）→ G3 交付（11/30）。
+
+## 6. 并行解耦与纪律
+
+- 新契约草案：`capability` / `router` / `focusguard` / `ActionResult`，B 线 approve 后冻结。
+- 旧契约冻结不变：`element.py` / Engine Protocol / `locators.yaml` / `schema.sql` / `api.md`。
+- live 测试仅 chat 模式、手动审批、固定无害消息；agent 模式需显式授权。
+- CDP 仅 loopback 随机端口；探针截图/dump 不入库。
+- 聊天/文档文本视为不可信数据，`read_result` 永不执行回复内命令。
+- git 身份仅命令级 `-c`，不修改全局配置；阶段完成后提交并推送。
+
+## 7. 风险与预案
 
 | 风险 | 预案 |
-|------|------|
-| B 被 A 的通道进度阻塞 | fixture-first 已解耦；G1 延期则 B 继续 fixture 线，A 优先 CDP 最小可用 |
-| Trae 单实例 live 冲突 | live 测试排队表；评测夜间批跑 |
-| 选择器漂移 | 注册表版本分节 + 探针重跑；A 负责 |
-| 人力不足 | 砍 S4 自修复自动化（保留手动重定位演示）；P2 全砍；Dashboard 减页 |
-| Sites 后端限制 | 静态站点+录屏回退（S5-b 停止条件） |
+|---|---|
+| ctypes 控件 UIA pattern 不可用 | 切换 PowerShell WinForms 靶应用；E1 先做 pattern 探测 |
+| FocusGuard 漏检 | 提高采样频率 + 事件钩子；报告漏检率 |
+| B 线未及时 approve 新契约 | 草案先并行开发，不接入 engine；G0 前完成评审 |
+| live 环境冲突 | 排队表；夜间批跑；只读优先 |
+| 范围膨胀 | Phase 1 只做验证，不做产品化；停止条件写入实验文档 |

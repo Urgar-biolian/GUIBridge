@@ -8,7 +8,7 @@ dist/
 .pytest_cache/
 *.sqlite3
 *.db
-probe/*.png
-probe/uia_dump.json
+src/probe/*.png
+src/probe/uia_dump.json
 var/
 .DS_Store

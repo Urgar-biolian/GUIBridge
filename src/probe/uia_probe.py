@@ -3,6 +3,7 @@
 import json
 import sys
 import time
+from pathlib import Path
 
 import uiautomation as auto
 
@@ -84,7 +85,7 @@ def main():
         print(f"  nodes walked: {len(nodes)}")
         all_nodes.extend(nodes)
 
-    with open("probe/uia_dump.json", "w", encoding="utf-8") as f:
+    with open(Path(__file__).parent / "uia_dump.json", "w", encoding="utf-8") as f:
         json.dump(all_nodes, f, ensure_ascii=False, indent=1)
 
     from collections import Counter

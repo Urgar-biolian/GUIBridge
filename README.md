@@ -7,14 +7,15 @@
 
 ## 当前进度（2026-11-17）
 
-- ✅ S0 技术探针：GO，路线修正为 CDP 优先；提交→状态→读回闭环实测成功（[probe/PROBE_REPORT.md](probe/PROBE_REPORT.md)）
+- ✅ S0 技术探针：GO，路线修正为 CDP 优先；提交→状态→读回闭环实测成功（[src/probe/PROBE_REPORT.md](src/probe/PROBE_REPORT.md)）
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
 - ✅ S1 感知层（A 线，commits `0e46c61`）：CDP/UIA/OCR 三通道、空间融合与冲突标记、semantic_id resolver 与 locators 注册表；单测 32 绿；live 只读定位连续 3 次通过
 - ✅ S4-a 自修复定位（A 线，`c92f3b4`）：漂移后按旧链 hints 重扫 → 唯一候选 → CDP 复验 → 写 pending 补丁（不覆盖注册表）；≥2 候选返回 `conflict` 停止；单测 46 绿 + live 3 轮通过
 - ✅ S2 适配器 / 事件存储 / MCP（A 线补齐）：SQLite 事件与任务状态机、安全门（白名单/身份/高影响审批）、受限动作执行、Trae 适配器（IDE/Chat 前置、可信鼠标模式切换、手动审批探测）、Engine 审计面、8 工具 MCP、桌面代理 REST/SSE；单测 83 绿；live MCP 闭环 `submitted→running→claimed_done` 并读回 OK，工作区无变更（F10–F12）
-- ◐ S3 交接与独立验证（A 线）：`packages/execution/verifier.py` 仅信 git 变更范围与测试退出码；`examples/handoff_demo.py` 在隔离 worktree 中跑通 `submitted→running→claimed_done→verified`（模拟执行器）；回复文本恒标 untrusted、不执行。**受安全约束（仅 chat 模式 live、禁止 agent 模式 live），Trae 真实改码的 live 端到端未执行**，用模拟链验证编排与验证器
+- ✅ S3 交接与独立验证（A 线）：`packages/execution/verifier.py` 仅信 git 变更范围与测试退出码；`examples/handoff_demo.py` 在隔离 worktree 中跑通 `submitted→running→claimed_done→verified`（模拟执行器）；回复文本恒标 untrusted、不执行。**受安全约束（仅 chat 模式 live、禁止 agent 模式 live），Trae 真实改码的 live 端到端未执行**，用模拟链验证编排与验证器
 - ✅ S4-b Dashboard / 审批 UI（按整体完成度补齐）：Vue3+TS+Vite；任务与迁移时间线、SSE 事件回放（含 before/after snapshot id）、定位器注册表与 pending heal patches 审核、一次性审批授予；浏览器实测健康检查/列表/授权 token 展示均通过，`vue-tsc` + `vite build` 通过
 - ✅ S5 评测（A 线）：`tests/bench/bench.py` A/B/C fixture 基准（7 场景 ×10，原始 JSON 入库）、`docs/benchmark.md` 实测与分析；架构/安全文档定稿
+- ✅ Phase 0（独立研发任务书对齐）：架构/竞品/原创性/实验四份文档骨架、`probe → src/probe` 迁移、Router/FocusGuard/UIA 执行契约草案、原生靶应用骨架；新契约待 B 线 approve，Phase 1 实验尚未执行
 - ⬜ S5 参赛交付：演示站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）；当前 Dashboard 可本地运行演示
 
 ## 双人分工（本仓库执行约定）
@@ -43,6 +44,10 @@
 | [docs/dev-prompts.md](docs/dev-prompts.md) | S1–S5 分阶段 Qoder 开发提示词 |
 | [docs/framework.md](docs/framework.md) | 技术选型、工程纪律、契约冻结清单、构建命令 |
 | [docs/architecture.md](docs/architecture.md) | 模块边界与关键决策记录 |
+| [docs/architecture/guibridge-design.md](docs/architecture/guibridge-design.md) | 任务书对齐架构：Router / FocusGuard / Trae 契约（草案） |
+| [docs/research/competitor-analysis.md](docs/research/competitor-analysis.md) | agent-desktop 公开能力对比（仅公开资料） |
+| [docs/research/originality-log.md](docs/research/originality-log.md) | 原创性与第三方依赖许可证记录 |
+| [docs/experiments/background-control.md](docs/experiments/background-control.md) | Phase 1 后台控制实验方案与结果（结果待执行） |
 | [docs/api.md](docs/api.md) | MCP 8 工具 + 本地 REST/SSE 规范与错误码 |
 | [docs/sql.md](docs/sql.md) | SQLite 事件存储设计（DDL：packages/events/schema.sql） |
 | [docs/agent.md](docs/agent.md) | 跨 Agent 交接协议、状态语义、提示注入防护 |
@@ -74,6 +79,7 @@ python -X utf8 tests/bench/bench.py --iterations 10
 - Live 测试仅限 chat 模式；agent 模式改码/长任务与审批菜单自动化在 3.6.13 上未获授权/不可用（F10）。
 - Dashboard 通过既有 REST/SSE 契约展示快照 id，不内嵌截图文件（避免证据外泄）。
 - 基准为 fixture 模拟，未调用视觉模型；主题切换/异常弹窗场景未评测。
+- Phase 1 原生 UIA / FocusGuard / 干扰对照实验尚未执行，`docs/experiments/background-control.md` 结果为空，禁止引用为已完成数据。
 - 演示站点与录屏尚未发布（需用户确认公开发布）。
 
 
@@ -91,12 +97,14 @@ apps/dashboard/         Vue3 + TS 展示与审批
 apps/desktop-agent/     FastAPI 本地控制平面
 packages/perception/    CDP / UIA / OCR / vision / fusion
 packages/semantic/      数据模型 / 重定位 / 注册表
-packages/execution/     动作 / 验证器 / 安全门
+packages/execution/     动作 / 验证器 / 安全门 / UIA 执行契约
+packages/routing/       能力表 / 干扰策略 / 执行路由（Phase 0 草案）
+packages/focusguard/    干扰监测与四态结果（Phase 0 草案）
 packages/adapters/      适配器接口 / Trae（locators.yaml）
 packages/events/        SQLite 事件存储（schema.sql）
 packages/mcp_gateway/           固定 8 工具 MCP Server
 examples/demo-app/      S3 交接演示目标项目
-probe/                  S0 探针脚本与证据
+src/probe/              S0 探针脚本与证据
 tests/                  单测 + live 标记集成测试
 ```
 
