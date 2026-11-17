@@ -29,3 +29,14 @@ def test_approval_prompt_wins():
 
 def test_no_signals_unknown():
     assert detect_state("", False, False, False) == "unknown"
+
+
+@pytest.mark.parametrize("hint", ["等待审批", "需要审批", "需审批", "approval required"])
+def test_approval_text_hint_never_claimed_done_even_with_reply(hint):
+    # An approval gate must not be mistaken for a completion claim even when a
+    # new assistant reply appeared (hard three-state requirement; principle 7).
+    assert detect_state(hint, False, True, False) == "awaiting_approval"
+
+
+def test_approval_visible_flag_never_claimed_done_even_with_reply():
+    assert detect_state("已为你完成修改", False, True, True) == "awaiting_approval"
