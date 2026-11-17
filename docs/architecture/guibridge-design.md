@@ -267,6 +267,7 @@ class ActionResult:
 - [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
 - [ ] 确认原则 7 由草案路由层 `OperationImpact.HIGH` 审批门强制（高影响操作即便 `NONE` 风险也须批准），复核 `tests/test_impact_approval.py` 与能力表 `impact`/`idempotent` 标注；确认其与冻结 `SafetyGate` 叠加而非替代，`UNKNOWN` 风险即便批准仍不可用。
 - [ ] 裁决开放问题 5：外部输入窗口内 `verified=True` 是否对非输入通道降级 `UNCONFIRMED`，以及 `FOREGROUND_INPUT` 自注入与外部输入的分离方案；确认 `classify()` 保守映射（`UNCONFIRMED` 可达）与探针实测 `FOCUS_SWITCH` 风险报告。
+- [ ] 评审 11.4 集成就绪性差异：裁决是否扩展 `api.md` 信封以承载四态/风险（否则 `UNCONFIRMED` 在 MCP 边界退化为失败，需双人 approve）；确认审批双门叠加、重试前调 `decide_retry`、操作命名对齐、`UIAExecChannel` 实测回填方案。
 
 ### 11.3 实测依据索引
 
@@ -282,3 +283,16 @@ class ActionResult:
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。
+
+### 11.4 Phase 2 集成就绪性与契约差异（只读审计，未改冻结模块）
+
+对冻结契约（`semantic/element.py`、`mcp_gateway/server.py` 的 Engine Protocol/TOOL_SPECS、`execution/actions.py`、`execution/safety.py`）与新草案层做只读比对，列出 Phase 2 接入前必须裁决/桥接的差异。**本节仅为评审输入，不代表已接入；G0 未过、冻结模块未改。**
+
+1. **两套 `ActionResult` 不兼容**：冻结 `semantic.element.ActionResult` 为两态布尔（`success`/`verified` + `before/after_snapshot_id` + `error_code` + `evidence: list[str]`）；草案 `focusguard.outcome.ActionResult` 为四态（`state` + `channel` + `risk` + `effect_verified` + `evidence: dict` + 内联 `FocusSnapshot`）。桥接需把四态映射回冻结信封，但**冻结 `success` 布尔无法区分 `FAILED` 与 `UNCONFIRMED`**——两者都落 `success=False/verified=False`，原则 6 的“未确认”语义在 MCP 边界丢失。裁决项：是否扩展 `api.md` 信封增加 `state`/`risk` 字段（属契约改动，需双人 approve），否则 UNCONFIRMED 只能在引擎内部保留、对外退化为失败。
+2. **四态→冻结映射（建议）**：`SUCCESS_NO_INTERFERENCE_OBSERVED`/`SUCCESS_WITH_INTERFERENCE` → `success=True, verified=True`（干扰信息需新信封字段承载）；`FAILED` → `success=False, error_code` 置位；`UNCONFIRMED` → `success=False, verified=False` 且**必须**另带 `state=unconfirmed` 标记，避免与确定失败混淆。
+3. **证据形态**：冻结 `evidence` 为快照 id 列表（`store.add_snapshot`），草案为 dict + 内联 `FocusSnapshot`。Phase 2 须把 `FocusSnapshot`/干扰证据经 `store` 落库并以 id 引用，方能塞进冻结 `evidence: list[str]`。
+4. **审批双门叠加**：冻结 `SafetyGate.check_action(approval_token)` 颁令/校验高影响令牌；草案 `operation_requires_approval(impact)` 只做“是否需审批”标记、不发令牌。Phase 2 须把路由 `requires_approval=True`（含 `HIGH` 影响）接到 `SafetyGate` 的令牌校验，二者叠加而非替代。
+5. **重试**：冻结 `ActionExecutor` 单次执行、无重试循环，原则 6 当前由构造保证。Phase 2 若引入重试，必须先调 `decide_retry(state, idempotent, ...)`；非幂等 `UNCONFIRMED`/`FAILED` 不得自动重试。
+6. **actor 契约信息丢失**：冻结 `ActionExecutor.actor(...) -> bool`，草案 `UIAExecChannel.invoke/... -> ActionResult`（四态）。bool 返回值丢四态/风险，桥接适配器须保留草案 `ActionResult` 供信封序列化，不能只取 bool。
+7. **操作命名对齐**：冻结 TOOL_SPECS 为 `trae.send_task`/`trae.get_status`/`trae.read_result`；草案能力表用 `send_task`/`get_task_status`/`read_task_result`。Phase 2 须统一 operation 命名（能力表键 ↔ TOOL_SPECS ↔ Engine 方法），否则路由查表与工具分发对不上。
+8. **`UIAExecChannel` 仍为 NotImplementedError 空壳**：Phase 1 实测逻辑在 `src/probe/uia_exec.py`，尚未回填到 `packages/execution/uia_channel.py` 的 Protocol 实现。Phase 2 须把实测探针逻辑收敛为正式通道实现（含实测 `FOCUS_SWITCH` 风险与四态分类），并经 B approve。
