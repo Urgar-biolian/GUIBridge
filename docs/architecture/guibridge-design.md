@@ -268,7 +268,7 @@ class ActionResult:
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
 - [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
 - [ ] 确认原则 7 由草案路由层 `OperationImpact.HIGH` 审批门强制（高影响操作即便 `NONE` 风险也须批准），复核 `tests/test_impact_approval.py` 与能力表 `impact`/`idempotent` 标注；确认其与冻结 `SafetyGate` 叠加而非替代，`UNKNOWN` 风险即便批准仍不可用。
-- [ ] 裁决开放问题 5：外部输入窗口内 `verified=True` 是否对非输入通道降级 `UNCONFIRMED`，以及 `FOREGROUND_INPUT` 自注入与外部输入的分离方案；确认 `classify()` 保守映射（`UNCONFIRMED` 可达）与探针实测 `FOCUS_SWITCH` 风险报告。
+- [ ] 裁决开放问题 5：外部输入窗口内 `verified=True` 是否对非输入通道降级 `UNCONFIRMED`，以及 `FOREGROUND_INPUT` 自注入与外部输入的分离方案；确认 `classify()` 保守映射（`UNCONFIRMED` 可达）与探针实测 `FOCUS_SWITCH` 风险报告。候选 `attribution.classify_with_attribution`（R3 选项 a）已经 run `20261117T111617Z` 实测落地：invoke 窗口真实污染触发降级、清洁窗口与 `classify()` 一致；`FOREGROUND_INPUT` 自注入分离仍需显式标记机制（未实现）。
 - [ ] 评审 11.4 集成就绪性差异：裁决是否扩展 `api.md` 信封以承载四态/风险（否则 `UNCONFIRMED` 在 MCP 边界退化为失败，需双人 approve）；确认审批双门叠加、重试前调 `decide_retry`、操作命名对齐、`UIAExecChannel` 实测回填方案。
 
 ### 11.3 实测依据索引
@@ -282,7 +282,7 @@ class ActionResult:
 - 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
 - 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
 - 草案契约组合单测：`tests/test_draft_contract_integration.py`（5 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 与 `UNCONFIRMED` 非幂等均禁重试。证明路由→分类→重试三草案契约可组合。
-- 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（4 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
+- 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（5 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析、写操作不得以 `OCR_VISION` 为后台执行通道（原则 3 数据层守护，路由层强制与否见 R6）。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
 - 冻结信封桥接单测：`tests/test_legacy_bridge.py`（8 例）——四态→`success`/`verified`/`error_code` 映射、干扰标记与风险透传，并显式锁定 `UNCONFIRMED` 与 `FAILED` 在冻结两态布尔下不可区分（仅保留的 `state` 可分离）。把 11.4 集成差异 1/2 落为可执行候选，未接入冻结模块、未改 `api.md`。
 - UIA 形式化通道草案单测：`tests/test_uia_channel.py`（12 例）——fake 注入下 invoke/set_value/toggle 的四态（验证成功+焦点切换→`SUCCESS_WITH_INTERFERENCE`、无干扰→`SUCCESS_NO_INTERFERENCE_OBSERVED`、pattern 不可用/控件缺失/调用抛错→`FAILED`、执行但未回读确认→`UNCONFIRMED`）、实测 `FOCUS_SWITCH` 风险、`read_state` 委托、焦点证据透传、仅光标位移亦判干扰。把 11.4 差异 8 的空壳补为可执行草案，未接入冻结执行器。
 - UIA 形式化通道实测验证 run `20261117T102127Z`：`src/probe/verify_uia_channel.py`，以真实适配器（uiautomation pattern + Win32FocusGuard + 靶应用回读）驱动正式 `UiaPatternChannel`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`、`state=success_with_interference`、`effect_verified=True`，与探针 `uia_exec.py` 实测一致——证明形式化草案通道在真实测量下复现四态与实测风险（非仅 fake；原始 JSON 入 gitignored `var/experiments/`）。
