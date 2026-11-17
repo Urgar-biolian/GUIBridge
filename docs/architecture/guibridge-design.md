@@ -225,7 +225,7 @@ class ActionResult:
 | 记录焦点变化事件 | E2 | FocusGuard 事件日志 |
 | 检测目标控件操作是否成功 | E1/E3 | 状态回读 + 四态结果 |
 | 明确识别不支持后台操作 | E5（含微信 4.x / Trae UIA 负例）+ 自绘靶应用负例（run `20261117T102927Z`） | capability scan 输出 |
-| Trae 实际能力有测试证据 | E6（只读复跑 + 授权 live 无害消息） | `src/probe/PROBE_REPORT.md` 增补；Chat 模式读回 `OK`、工作区零变更 |
+| Trae 实际能力有测试证据 | E6（只读复跑 + 授权 live 无害消息）+ 正式适配器读路径实测 | `src/probe/PROBE_REPORT.md` 增补；Chat 模式读回 `OK`、工作区零变更；`verify_trae_adapter_read.py` run `20261117T112436Z` 5/5 `none` |
 | 所有实验可重复运行 | `src/probe/run_experiments.py` | 固定环境记录 + 原始 JSON |
 
 ## 10. 开放问题
@@ -254,6 +254,10 @@ class ActionResult:
 | 重试策略（原则 6 落地） | `packages/focusguard/retry_policy.py`、第 4.2 节 | 草案（含单测） |
 | 操作影响维度 + 审批门（原则 7 落地） | `packages/routing/capability.py`、`policy.py`、`router.py`、第 3.6 节 | 草案（含单测） |
 | 四态→冻结信封桥接（集成候选） | `packages/focusguard/legacy_bridge.py`、第 11.4 节 | 草案（含单测，未接入冻结模块） |
+| R2 选项 (a) 向后兼容扩展信封候选 | `packages/focusguard/extended_envelope.py`、第 11.5 R2 | 草案（7 例单测 + run `20261117T111617Z` 实测；未改冻结 `api.md`） |
+| R3 选项 (a) 外部输入归因候选 | `packages/focusguard/attribution.py`、第 11.5 R3 | 草案（8 例单测 + run `20261117T111617Z` 实测污染降级；未替换 `classify()`） |
+| R4 选项 (b) 操作名 crosswalk 候选 | `packages/routing/operation_names.py`、第 11.5 R4 | 草案（8 例单测含漂移守护 + 真实表实测一致；未改冻结 TOOL_SPECS） |
+| R6 选项 (a) OCR 感知路由候选 | `packages/routing/ocr_guard.py`、第 11.5 R6 | 草案（7 例单测 + run `20261117T111617Z` 实测；未替换 `StaticRouter`） |
 
 ### 11.2 B 线 approve 检查项
 
