@@ -10,7 +10,8 @@
 - ✅ S0 技术探针：GO，路线修正为 CDP 优先；提交→状态→读回闭环实测成功（[probe/PROBE_REPORT.md](probe/PROBE_REPORT.md)）
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
 - ✅ S1 感知层（A 线，commits `0e46c61`）：CDP/UIA/OCR 三通道、空间融合与冲突标记、semantic_id resolver 与 locators 注册表；单测 32 绿；live 只读定位连续 3 次通过
-- ⬜ S2–S5 开发：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
+- ✅ S4-a 自修复定位（A 线，`c92f3b4`）：漂移后按旧链 hints 重扫 → 唯一候选 → CDP 复验 → 写 pending 补丁（不覆盖注册表）；≥2 候选返回 `conflict` 停止；单测 46 绿 + live 3 轮通过
+- ⬜ 其余：S2/S3 与 S4-b（B 线）、S5-a 评测（A 线）：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
 
 ## 双人分工（本仓库执行约定）
 

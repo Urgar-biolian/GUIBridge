@@ -14,7 +14,7 @@
 | S1 感知与语义引擎 | ✅ 完成（11/17，早于 G1） | feat/a-perception `0e46c61`；单测 32 通过；live 只读定位 3 连过；融合冲突用例返回 conflict |
 | S2 适配器与 MCP | ⬜ 未开始 | dev-prompts S2 |
 | S3 交接与验证 | ⬜ 未开始 | dev-prompts S3 |
-| S4 自修复与 Dashboard | ⬜ 未开始 | dev-prompts S4 |
+| S4 自修复与 Dashboard | ◐ A 线 S4-a ✅（11/17，`c92f3b4`） | heal：hint 重扫/唯一候选/复验/pending 补丁；歧义 100% 停止；live 3 轮过。S4-b（Dashboard/审批 UI）属 B 线，未开始 |
 | S5 基准与提交 | ⬜ 未开始 | dev-prompts S5 |
 
 ## 2. 双人分工（两条并行线）
