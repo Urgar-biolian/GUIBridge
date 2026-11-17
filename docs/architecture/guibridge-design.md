@@ -234,6 +234,7 @@ class ActionResult:
 2. ~~FocusGuard 漏检率与采样频率的关系需量化~~ 已部分量化：事件钩子补捉轮询漏掉的瞬时切换（E1c）；`dwell_limit.py` 快注入实测停留低至约 8.9 ms，25/25 轮询+钩子检出、0 污染；<2 ms 理论盲区仍待量化。
 3. Trae 版本升级后的选择器漂移由既有 heal 流程覆盖，需 Phase 2 复验。
 4. 新契约需 B 线 approve 后才能从“草案”转为冻结（见第 11 节评审包）。
+5. **外部输入下的效果归因**：`classify()` 目前对 `verified=True` 判成功态，即便 `external_input_during_window=True`。对不注入输入的通道（UIA/APP_PROTOCOL），窗口内出现外部输入意味着观测到的效果可能由用户而非动作造成，效果归因存疑——是否应降级为 `UNCONFIRMED`？对 `FOREGROUND_INPUT` 则需先区分“动作自身注入”与“真正外部输入”（当前 `FocusRun` 仅一个布尔标记，未分离）。实验层已用“污染运行弃用并保留原文件”规避，但契约层是否内置降级待定，需 B 线评审决定，避免草率改动误伤物理输入通道的自注入情形。
 
 ## 11. 契约评审包（待 B 线 approve）
 
@@ -265,6 +266,7 @@ class ActionResult:
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
 - [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
 - [ ] 确认原则 7 由草案路由层 `OperationImpact.HIGH` 审批门强制（高影响操作即便 `NONE` 风险也须批准），复核 `tests/test_impact_approval.py` 与能力表 `impact`/`idempotent` 标注；确认其与冻结 `SafetyGate` 叠加而非替代，`UNKNOWN` 风险即便批准仍不可用。
+- [ ] 裁决开放问题 5：外部输入窗口内 `verified=True` 是否对非输入通道降级 `UNCONFIRMED`，以及 `FOREGROUND_INPUT` 自注入与外部输入的分离方案；确认 `classify()` 保守映射（`UNCONFIRMED` 可达）与探针实测 `FOCUS_SWITCH` 风险报告。
 
 ### 11.3 实测依据索引
 
