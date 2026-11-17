@@ -15,6 +15,7 @@ class FocusSnapshot:
     cursor_xy: tuple[int, int]
     target_active: bool
     ts: float
+    last_input_age_ms: float | None = None
 
 
 class ResultState(str, Enum):

@@ -1,10 +1,12 @@
-"""FocusGuard contract (Phase 0 draft, pending B-line approval).
-
-Phase 1 implements monitoring; this module never injects input itself.
-"""
+"""Win32 FocusGuard implementation (Phase 1; contract still pending B approval)."""
 
 from __future__ import annotations
 
+import ctypes
+import threading
+import time
+from dataclasses import dataclass, field
+from ctypes import wintypes
 from typing import Callable, Protocol, TypeVar
 
 from .outcome import FocusSnapshot
@@ -17,13 +19,119 @@ class FocusGuard(Protocol):
 
     def wrap(self, action: Callable[[], T]) -> tuple[T, FocusSnapshot, FocusSnapshot]: ...
 
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+user32.GetCursorPos.restype = wintypes.BOOL
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.restype = wintypes.BOOL
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+user32.GetLastInputInfo.restype = wintypes.BOOL
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.GetTickCount.restype = wintypes.DWORD
+
+
+def _last_input_age_ms() -> float | None:
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    return float((kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF)
+
+
+@dataclass
+class FocusRun:
+    result: object
+    before: FocusSnapshot
+    after: FocusSnapshot
+    foreground_events: list[tuple[float, int]] = field(default_factory=list)
+    cursor_trace: list[tuple[float, int, int]] = field(default_factory=list)
+    unexpected_focus_switch: bool = False
+    cursor_displacement: int = 0
+    external_input_during_window: bool | None = None
+
 
 class Win32FocusGuard:
-    def __init__(self, target_hwnd: int) -> None:
-        self.target_hwnd = target_hwnd
+    def __init__(self, target_hwnd: int, interval: float = 0.002) -> None:
+        self.target_hwnd = int(target_hwnd)
+        self.interval = interval
 
     def snapshot(self) -> FocusSnapshot:
-        raise NotImplementedError("Phase 1: GetForegroundWindow/GetCursorPos/IsWindowVisible")
+        foreground = int(user32.GetForegroundWindow() or 0)
+        point = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(point))
+        active = foreground == self.target_hwnd and bool(
+            user32.IsWindowVisible(self.target_hwnd)
+        )
+        return FocusSnapshot(
+            foreground_hwnd=foreground,
+            cursor_xy=(point.x, point.y),
+            target_active=active,
+            ts=time.time(),
+            last_input_age_ms=_last_input_age_ms(),
+        )
 
-    def wrap(self, action: Callable[[], T]) -> tuple[T, FocusSnapshot, FocusSnapshot]:
-        raise NotImplementedError("Phase 1: before/after snapshot plus EVENT_SYSTEM_FOREGROUND log")
+    def wrap_with_events(self, action, settle: float = 0.05) -> FocusRun:
+        before = self.snapshot()
+        stop = threading.Event()
+        events: list[tuple[float, int]] = []
+        trace: list[tuple[float, int, int]] = []
+        last_foreground = [before.foreground_hwnd]
+
+        def sample() -> None:
+            while not stop.is_set():
+                foreground = int(user32.GetForegroundWindow() or 0)
+                point = wintypes.POINT()
+                user32.GetCursorPos(ctypes.byref(point))
+                now = time.time()
+                trace.append((now, point.x, point.y))
+                if foreground != last_foreground[0]:
+                    events.append((now, foreground))
+                    last_foreground[0] = foreground
+                time.sleep(self.interval)
+
+        sampler = threading.Thread(target=sample, daemon=True)
+        sampler.start()
+        try:
+            result = action()
+        finally:
+            time.sleep(settle)
+            stop.set()
+            sampler.join(timeout=1.0)
+
+        after = self.snapshot()
+        if after.foreground_hwnd != last_foreground[0]:
+            events.append((after.ts, after.foreground_hwnd))
+
+        unexpected = any(fg != before.foreground_hwnd for _, fg in events)
+        displacement = max(
+            (
+                max(abs(x - before.cursor_xy[0]), abs(y - before.cursor_xy[1]))
+                for _, x, y in trace
+            ),
+            default=0,
+        )
+        external_input = None
+        if before.last_input_age_ms is not None and after.last_input_age_ms is not None:
+            window_ms = (after.ts - before.ts) * 1000
+            external_input = after.last_input_age_ms < before.last_input_age_ms + window_ms - 20
+        return FocusRun(
+            result=result,
+            before=before,
+            after=after,
+            foreground_events=events,
+            cursor_trace=trace,
+            unexpected_focus_switch=unexpected,
+            cursor_displacement=displacement,
+            external_input_during_window=external_input,
+        )
+
+    def wrap(self, action):
+        run = self.wrap_with_events(action)
+        return run.result, run.before, run.after
