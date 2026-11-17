@@ -17,7 +17,7 @@
 - ✅ S5 评测（A 线）：`tests/bench/bench.py` A/B/C fixture 基准（7 场景 ×10，原始 JSON 入库）、`docs/benchmark.md` 实测与分析；架构/安全文档定稿
 - ✅ Phase 0（独立研发任务书对齐）：架构/竞品/原创性/实验四份文档骨架、`probe → src/probe` 迁移、Router/FocusGuard/UIA 执行契约草案、原生靶应用骨架；新契约待 B 线 approve
 - ✅ Phase 1 E1–E6 实验（A 线，`30378b2` + P0 增补 `4665ab8`）：受控 Win32 靶应用后台 UIA 9/9 光标零位移但 9/9 焦点切换；前台起步对照（E1c）9/9 仍出现瞬时焦点切换，事件钩子补捉轮询漏掉的 3 次；FocusGuard 停留曲线（实测 57–138 ms）轮询/钩子均 9/9 检出、误报 0/3；遮挡下 UIA 成功而坐标点击命中遮挡窗；微信可见窗口仅 4 个 UIA 框架节点（负例刷新）；Trae 授权 live 在 Chat 模式发送一条无害消息并读回 `OK`、工作区零变更；DPI 变更未执行
-- ✅ Phase 1 契约验证补强（A 线）：实测能力表草案 + 加载器；FocusGuard 事件钩子精确计时（最短可解析停留 15 ms）与大样本可靠性（误报 0/30、检出 15/15）；只读 Trae CDP 实测无干扰（`send_task` 发送点击仍 `unknown` 待重新授权）；**任务书原则 6/7 落地为草案契约**——`retry_policy.decide_retry`（非幂等未确认禁自动重试）与路由层 `OperationImpact.HIGH` 审批门（高影响即便无干扰须批准），含路由/分类/重试组合单测与能力表完整性守护；`classify()` 修正使 `UNCONFIRMED` 可达、探针 UIA 风险按实测 `FOCUS_SWITCH` 报告（受控实测确认）；四态→冻结信封桥接草案（显式锁定 UNCONFIRMED 在两态信封下的退化，待 B 裁决）；全套 195 通过。新契约仍待 B 线 approve，未接入冻结 engine/MCP
+- ✅ Phase 1 契约验证补强（A 线）：实测能力表草案 + 加载器；FocusGuard 事件钩子精确计时（最短可解析停留 15 ms）与大样本可靠性（误报 0/30、检出 15/15）；只读 Trae CDP 实测无干扰（`send_task` 发送点击仍 `unknown` 待重新授权）；**任务书原则 6/7 落地为草案契约**——`retry_policy.decide_retry`（非幂等未确认禁自动重试）与路由层 `OperationImpact.HIGH` 审批门（高影响即便无干扰须批准），含路由/分类/重试组合单测与能力表完整性守护；`classify()` 修正使 `UNCONFIRMED` 可达、探针 UIA 风险按实测 `FOCUS_SWITCH` 报告（受控实测确认）；四态→冻结信封桥接草案（显式锁定 UNCONFIRMED 在两态信封下的退化，待 B 裁决）；UIA 形式化通道 `UiaPatternChannel` 补为注入式草案实现（未接入冻结执行器）；草案契约链实测探针 `verify_contract_chain.py`（路由→分类→重试→桥接 3/3 贯通）；B 线裁决清单 R1–R5（设计文档 11.5）；全套 207 通过。新契约仍待 B 线 approve，未接入冻结 engine/MCP
 - ⬜ S5 参赛交付：演示站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）；当前 Dashboard 可本地运行演示
 
 ## 双人分工（本仓库执行约定）
