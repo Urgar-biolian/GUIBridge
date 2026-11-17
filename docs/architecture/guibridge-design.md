@@ -273,6 +273,7 @@ class ActionResult:
 - 实测能力表单测：`tests/test_capability_table.py`（7 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
 - 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
 - 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
+- 草案契约组合单测：`tests/test_draft_contract_integration.py`（4 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 非幂等禁重试。证明路由→分类→重试三草案契约可组合。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 代码提交：`4665ab8`（P0 实验改进）。
