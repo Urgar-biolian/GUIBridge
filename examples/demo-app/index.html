@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GUIBridge Demo App</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <h1>登录示例</h1>
+      <label>
+        密码
+        <input :type="showPassword ? 'text' : 'password'" v-model="password" />
+      </label>
+      <!-- S3 演示任务：为上面的密码输入框新增显示/隐藏切换按钮，并补充测试 -->
+    </div>
+    <script>
+      Vue.createApp({
+        data() {
+          return { password: "", showPassword: false };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>

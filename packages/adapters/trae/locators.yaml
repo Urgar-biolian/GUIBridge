@@ -1,0 +1,65 @@
+app: trae
+platform: windows
+app_version: "3.6.13"
+
+window:
+  process_names: ["Trae.exe"]
+  title_suffix: " - TRAE"
+
+launch:
+  managed_args: ["--remote-debugging-port={port}"]
+  port_binding: loopback
+
+locators:
+  trae.mode.ide_tab:
+    role: tab
+    chain:
+      - cdp_selector: ".icube-mode-tab-item-ide"
+    verification: ide_layout_visible
+  trae.chat.mode_entry:
+    role: button
+    chain:
+      - cdp_selector: ".v2-agent-entry-btn"
+    verification: mode_menu_open
+    note: "menu is .popup-menu; pick leaf item by exact text (Chat/Agent), never the wrapper"
+  trae.chat.composer:
+    role: textbox
+    chain:
+      - cdp_selector: ".chat-input-v2-input-box-editable"
+      - uia_criteria: {control_type: Document, name_contains: ""}
+      - ocr_text: "添加上下文"
+    verification: focusable
+  trae.chat.send_button:
+    role: button
+    chain:
+      - cdp_selector: ".chat-input-v2-send-button"
+    verification: message_submitted
+    state_signal: "disabled class = empty composer"
+  trae.chat.approval_mode:
+    role: button
+    high_impact: true
+    chain:
+      - cdp_selector: "button[aria-label='自动审批']"
+      - cdp_selector: "[class*=permissionModeTrigger]"
+    verification: approval_mode_manual
+  trae.chat.model_select:
+    role: combobox
+    chain:
+      - cdp_selector: ".icd-model-select-trigger"
+    verification: model_menu_open
+  trae.chat.new_session:
+    role: button
+    chain:
+      - cdp_selector: "[data-testid=ai-chat-create-new-session]"
+    verification: empty_conversation
+  trae.chat.conversation:
+    role: document
+    chain:
+      - cdp_selector: ".ai-chat-v2-ide-root"
+    verification: text_readable
+
+safety:
+  require_active_window: true
+  require_user_approval: true
+  default_approval_mode: manual
+  allow_shell_execution: false
