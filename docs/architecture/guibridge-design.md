@@ -284,6 +284,7 @@ class ActionResult:
 - 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（4 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、`logical_only` 必须有实测证据、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
 - 冻结信封桥接单测：`tests/test_legacy_bridge.py`（8 例）——四态→`success`/`verified`/`error_code` 映射、干扰标记与风险透传，并显式锁定 `UNCONFIRMED` 与 `FAILED` 在冻结两态布尔下不可区分（仅保留的 `state` 可分离）。把 11.4 集成差异 1/2 落为可执行候选，未接入冻结模块、未改 `api.md`。
 - UIA 形式化通道草案单测：`tests/test_uia_channel.py`（12 例）——fake 注入下 invoke/set_value/toggle 的四态（验证成功+焦点切换→`SUCCESS_WITH_INTERFERENCE`、无干扰→`SUCCESS_NO_INTERFERENCE_OBSERVED`、pattern 不可用/控件缺失/调用抛错→`FAILED`、执行但未回读确认→`UNCONFIRMED`）、实测 `FOCUS_SWITCH` 风险、`read_state` 委托、焦点证据透传、仅光标位移亦判干扰。把 11.4 差异 8 的空壳补为可执行草案，未接入冻结执行器。
+- UIA 形式化通道实测验证 run `20261117T102127Z`：`src/probe/verify_uia_channel.py`，以真实适配器（uiautomation pattern + Win32FocusGuard + 靶应用回读）驱动正式 `UiaPatternChannel`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`、`state=success_with_interference`、`effect_verified=True`，与探针 `uia_exec.py` 实测一致——证明形式化草案通道在真实测量下复现四态与实测风险（非仅 fake；原始 JSON 入 gitignored `var/experiments/`）。
 - Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
 - FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
 - 分类/风险修正实测验证 run `20261117T100205Z`：`src/probe/verify_classify.py`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`（修正后非 `LOGICAL_ONLY`）、`state=success_with_interference`、`effect_verified=True`，端到端确认四态分类与实测风险报告（原始 JSON 入 gitignored `var/experiments/`）。
@@ -301,7 +302,7 @@ class ActionResult:
 5. **重试**：冻结 `ActionExecutor` 单次执行、无重试循环，原则 6 当前由构造保证。Phase 2 若引入重试，必须先调 `decide_retry(state, idempotent, ...)`；非幂等 `UNCONFIRMED`/`FAILED` 不得自动重试。
 6. **actor 契约信息丢失**：冻结 `ActionExecutor.actor(...) -> bool`，草案 `UIAExecChannel.invoke/... -> ActionResult`（四态）。bool 返回值丢四态/风险，桥接适配器须保留草案 `ActionResult` 供信封序列化，不能只取 bool。
 7. **操作命名对齐**：冻结 TOOL_SPECS 为 `trae.send_task`/`trae.get_status`/`trae.read_result`；草案能力表用 `send_task`/`get_task_status`/`read_task_result`。Phase 2 须统一 operation 命名（能力表键 ↔ TOOL_SPECS ↔ Engine 方法），否则路由查表与工具分发对不上。
-8. **`UIAExecChannel` 形式化通道仍待 B approve 接入**：Phase 1 实测逻辑在 `src/probe/uia_exec.py`；`packages/execution/uia_channel.py` 的 `UiaPatternChannel` 已从 NotImplementedError 空壳补为**草案实现**（注入 resolve/pattern_of/guard_for/read_state/verify，guard 包裹 pattern 调用 + 回读 + 四态分类，实测 `FOCUS_SWITCH` 风险；含 12 例 fake 单测 `tests/test_uia_channel.py`），但**未接入冻结执行器**。Phase 2 须裁决注入契约（resolver/verifier 签名与 frozen `ActionExecutor` 对齐）、把实测探针逻辑收敛为正式通道并经 B approve 后接入。
+8. **`UIAExecChannel` 形式化通道仍待 B approve 接入**：Phase 1 实测逻辑在 `src/probe/uia_exec.py`；`packages/execution/uia_channel.py` 的 `UiaPatternChannel` 已从 NotImplementedError 空壳补为**草案实现**（注入 resolve/pattern_of/guard_for/read_state/verify，guard 包裹 pattern 调用 + 回读 + 四态分类，实测 `FOCUS_SWITCH` 风险；含 12 例 fake 单测 `tests/test_uia_channel.py`，并经 run `20261117T102127Z` 真实靶应用实测复现 3/3 `focus_switch`），但**未接入冻结执行器**。Phase 2 须裁决注入契约（resolver/verifier 签名与 frozen `ActionExecutor` 对齐）、把实测探针逻辑收敛为正式通道并经 B approve 后接入。
 
 ### 11.5 B 线裁决清单（解锁 Phase 2 的决策议程）
 
@@ -313,4 +314,4 @@ class ActionResult:
 - **R4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
 - **R5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
 
-**当前可执行证据**：207 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
+**当前可执行证据**：207 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
