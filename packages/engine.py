@@ -284,3 +284,6 @@ class GUIBridgeEngine:
         return [{"semantic_id": loc.semantic_id, "app_version": loc.app_version,
                  "chain": loc.chain, "verification": loc.verification}
                 for loc in self.registry.values()]
+
+    def list_heal_patches(self, status: str | None = None) -> list[dict]:
+        return self.store.list_heal_patches(status)

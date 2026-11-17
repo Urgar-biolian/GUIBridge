@@ -13,7 +13,8 @@
 - ✅ S4-a 自修复定位（A 线，`c92f3b4`）：漂移后按旧链 hints 重扫 → 唯一候选 → CDP 复验 → 写 pending 补丁（不覆盖注册表）；≥2 候选返回 `conflict` 停止；单测 46 绿 + live 3 轮通过
 - ✅ S2 适配器 / 事件存储 / MCP（A 线补齐）：SQLite 事件与任务状态机、安全门（白名单/身份/高影响审批）、受限动作执行、Trae 适配器（IDE/Chat 前置、可信鼠标模式切换、手动审批探测）、Engine 审计面、8 工具 MCP、桌面代理 REST/SSE；单测 83 绿；live MCP 闭环 `submitted→running→claimed_done` 并读回 OK，工作区无变更（F10–F12）
 - ◐ S3 交接与独立验证（A 线）：`packages/execution/verifier.py` 仅信 git 变更范围与测试退出码；`examples/handoff_demo.py` 在隔离 worktree 中跑通 `submitted→running→claimed_done→verified`（模拟执行器）；回复文本恒标 untrusted、不执行。**受安全约束（仅 chat 模式 live、禁止 agent 模式 live），Trae 真实改码的 live 端到端未执行**，用模拟链验证编排与验证器
-- ⬜ 其余：S4-b（Dashboard/审批 UI，B 线）、S5 评测（A 线）：双人并行计划见 [docs/team-plan.md](docs/team-plan.md)
+- ✅ S4-b Dashboard / 审批 UI（按整体完成度补齐）：Vue3+TS+Vite；任务与迁移时间线、SSE 事件回放（含 before/after snapshot id）、定位器注册表与 pending heal patches 审核、一次性审批授予；浏览器实测健康检查/列表/授权 token 展示均通过，`vue-tsc` + `vite build` 通过
+- ⬜ S5 评测与交付：A/B/C 基准脚本、benchmark 与架构/安全文档定稿、演示站点与录屏
 
 ## 双人分工（本仓库执行约定）
 

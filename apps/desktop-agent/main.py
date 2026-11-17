@@ -108,8 +108,9 @@ def create_app(engine: GUIBridgeEngine | None = None) -> FastAPI:
         return engine.store.create_approval(scope, body.granted_by, body.ttl_seconds)
 
     @app.get("/locators")
-    def locators() -> dict:
-        return {"locators": engine.list_locators()}
+    def locators(status: str | None = None) -> dict:
+        return {"locators": engine.list_locators(),
+                "heal_patches": engine.list_heal_patches(status)}
 
     @app.post("/locators/{semantic_id}/heal-review")
     def heal_review(semantic_id: str, body: HealReviewIn) -> dict:
