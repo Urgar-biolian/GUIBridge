@@ -1,0 +1,10 @@
+{
+  "name": "guibridge-demo-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Isolated target project for GUIBridge S3 handoff demo",
+  "scripts": {
+    "test": "node --test tests/password.test.mjs",
+    "start": "python -m http.server 4173"
+  }
+}
