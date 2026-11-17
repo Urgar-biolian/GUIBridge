@@ -10,4 +10,5 @@ dist/
 *.db
 probe/*.png
 probe/uia_dump.json
+var/
 .DS_Store

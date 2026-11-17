@@ -23,6 +23,10 @@ class CDPSelectorProvider:
             return []
         return elements_from_dom([raw], window_id)
 
+    async def scan(self, window_id: str) -> list[GUIElement]:
+        raws = await self.channel.scan_elements(self.session_id)
+        return elements_from_dom(raws, window_id)
+
 
 class UIACriteriaProvider:
     kind = "uia_criteria"
