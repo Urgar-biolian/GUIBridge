@@ -1,7 +1,7 @@
 # 竞品分析：agent-desktop 与 GUIBridge
 
-状态：Phase 0 骨架（2026-11-17）
-资料来源：本任务书提供的公开项目地址与公开描述；未读取、未复制、未移植其源代码。标注“待核实”的条目必须在 Phase 1 通过公开文档复核后才能写入结论。
+状态：Phase 1 公开资料复核（2026-11-17；待 B 线复核）
+资料来源：本任务书提供的公开项目地址与公开描述；未读取、未复制、未移植其源代码。公开 README 声明已于 2026-11-17 复核并写入 §2/§3；仍标注“未声明”的条目为公开资料未覆盖项，不得臆测。
 
 ## 1. 分析边界
 
@@ -11,29 +11,42 @@
 
 ## 2. 竞品公开能力概述
 
-根据公开描述，agent-desktop 读取桌面应用控件并暴露操作能力：
+以下均为公开 README/仓库元数据**声明**（访问日期 2026-11-17，`github.com/vercel-labs/agent-desktop`，main 分支），非对其实现质量的核实；仅用于能力层面对比，未读取/复制其源代码。
 
-| 维度 | 公开描述 |
+| 维度 | 公开声明 |
 |---|---|
-| 感知 | Windows UI Automation、macOS Accessibility API、Linux AT-SPI |
-| 操作 | 通过 CLI、MCP 等方式提供操作能力 |
-| 平台 | Windows / macOS / Linux |
+| 定位 | “Computer use for AI agents: see and operate desktop apps … through the OS accessibility tree”；“without screenshots or pixel matching”；“agent-desktop has no model inside. The loop lives in your agent.” |
+| 感知 | 读取可访问性树并返回 JSON，每个可操作元素带 `ref`；macOS AX API / Windows UI Automation / Linux AT-SPI |
+| 平台 | macOS 13+（Intel/Apple Silicon）；Windows 10 1809+（x64/ARM64）；Ubuntu 24.04+（x86_64/aarch64，X11/Wayland） |
+| 暴露形式 | CLI + C 库（`libagent_desktop_ffi`）+ MCP over stdio（`agent-desktop mcp`，工具名如 `desktop_snapshot`/`desktop_click`）；自述 61 个命令名、57 个操作命令 |
+| 焦点/输入 | “Headless by default. Ref actions use the accessibility API without moving the pointer or taking focus. The global `--headed` flag allows physical input.”；各平台页列出 headless 可用/需 `--headed`/拒绝项 |
+| 结果确认 | observe→act→observe 循环；post-action wait 观察 ref 原进程/原窗口；重新 snapshot 校验；JSON 信封 `ok`/`command`/`data` + 错误码（`INVALID_ARGS`/`STALE_REF`/`AMBIGUOUS_TARGET`） |
+| 重试纪律 | “Retry a failed command only when `error.disposition.retry` is `safe`.” |
+| 隐私 | 快照/剪贴板/截图/命令输出可能含私密桌面内容，要求不入公共日志/上传 |
+| 许可证 | Apache-2.0 |
 
-以下内容公开资料未明确，标记待核实：执行通道路由策略、焦点干扰检测、操作结果四态、审批模型、AI IDE 专用适配、验证证据链、许可证细节。
+公开 README **未声明**（保持待核实/未公开）：能力感知的多通道路由策略、焦点干扰**检测**与四态结果模型、高影响操作审批令牌模型、AI IDE 专用语义适配、独立代码变更验证证据链（git 范围 + 测试退出码）。
 
 ## 3. 能力对比矩阵
 
-| 维度 | agent-desktop（公开资料） | GUIBridge（本项目设计与已实测） |
+竞品列均为公开 README 声明（见 §2，访问 2026-11-17）；本项目列为设计 + 已实测。
+
+| 维度 | agent-desktop（公开声明） | GUIBridge（本项目设计与已实测） |
 |---|---|---|
-| Windows 感知 | UIA | UIA + CDP + OCR + 视觉融合；UIA 只读能力已实现（S1） |
+| Windows 感知 | UI Automation（可访问性树→JSON+ref） | UIA + CDP + OCR + 视觉融合；UIA 只读能力已实现（S1） |
 | Electron 应用 | 公开资料未声明专用协议 | CDP 实测可读完整 DOM 并完成闭环（F3/F6/F12） |
-| 多通道 | 公开资料未声明路由 | Capability-Aware Router：按 app×operation 能力表与干扰策略选通道 |
-| 干扰检测 | 公开资料未声明 | FocusGuard：前台 HWND、光标、目标激活、四态结果 |
-| 结果确认 | 公开资料未声明 | 3 态任务纪律 + verifier（git 范围 + 测试退出码） |
-| 审批 | 公开资料未声明 | 白名单 + 高影响一次性 token + 手动审批约束 |
+| 多通道路由 | 公开资料未声明能力感知路由（按平台 adapter + headless/`--headed`） | Capability-Aware Router：按 app×operation 能力表与干扰策略选通道 |
+| 焦点/干扰 | 声明 headless 默认“不移动指针/不取焦点”，`--headed` 允许物理输入；未声明干扰**检测** | FocusGuard 实测：本机原生 Win32 UIA 仍引发焦点切换（E1b/E1c），按实测声明 `FOCUS_SWITCH`；前台 HWND/光标/事件钩子监测 + 四态结果 |
+| 结果确认 | observe→act→observe + post-action wait + 重新 snapshot；JSON `ok` 信封 | 3 态任务纪律 + 四态 ActionResult + 独立 verifier（git 范围 + 测试退出码） |
+| 重试纪律 | 声明仅当 `error.disposition.retry=safe` 才重试 | 原则 6：非幂等 `UNCONFIRMED`/`FAILED` 禁自动重试，由 `decide_retry` 强制 |
+| 审批 | 公开资料未声明高影响审批令牌模型（仅 macOS 辅助功能授权引导） | 白名单 + 高影响一次性 token + 手动审批约束 + 路由层 `OperationImpact.HIGH` 审批门 |
 | AI IDE 适配 | 公开资料未声明 | Trae 四接口：send/status/read/verify，含前置后置与证据 |
-| 平台范围 | 三平台 | 本期仅 Windows（任务书要求） |
+| 暴露形式 | CLI + C 库 + MCP stdio | MCP gateway + CLI（独立实现） |
+| 平台范围 | macOS / Windows / Linux | 本期仅 Windows（任务书要求） |
+| 许可证 | Apache-2.0 | 独立实现，依赖许可证见 originality-log；不依赖 agent-desktop |
 | 运行依赖 | — | 不依赖 agent-desktop；无源码复用 |
+
+**关键差异化（实测支撑，非口头声明）**：竞品公开声明 headless“不取焦点”，但本项目对受控原生靶应用的实测（E1b 后台 9/9、E1c 前台起步 9/9）表明 UIA pattern 调用即便光标零位移仍会切换前台焦点。因此 GUIBridge 不把“无物理鼠标移动”等同于“无焦点干扰”，而是按“应用×操作×控件×前后台状态”实测声明风险，并以 FocusGuard 四态如实报告——这是公开声明未覆盖、且由本机实测驱动的严谨度差异。
 
 ## 4. GUIBridge 的差异化定位
 
@@ -50,14 +63,14 @@
 
 ## 6. 待办（Phase 1）
 
-- [ ] 复核 agent-desktop 公开 README 的能力声明，替换“待核实”项。
-- [ ] 记录其公开许可证与平台要求（仅用于对比，不引入依赖）。
-- [ ] 补充一张“同一任务在三类应用上的通道可用性”实测对比（原生 / Electron / 自绘）。
-- [ ] 由 B 线复核本文件，确认无未授权源码引用。
+- [x] 复核 agent-desktop 公开 README 的能力声明，替换“待核实”项（2026-11-17 访问 main 分支 README，§2/§3 已按公开声明更新；未声明者保留标注）。
+- [x] 记录其公开许可证与平台要求（Apache-2.0；macOS 13+/Windows 10 1809+/Ubuntu 24.04+；仅用于对比，不引入依赖）。
+- [ ] 补充一张“同一任务在三类应用上的通道可用性”实测对比（原生 / Electron / 自绘）；原生与 Electron 已有实测，自绘待补。
+- [ ] 由 B 线复核本文件，确认无未授权源码引用、公开声明引用准确。
 
 ## 7. 来源
 
-- 任务书提供的项目地址：https://github.com/vercel-labs/agent-desktop
+- 任务书提供的项目地址：https://github.com/vercel-labs/agent-desktop （公开 README + 仓库元数据，访问 2026-11-17，main 分支；引用章节：Install / Quick start / How it works / For AI agents / MCP / Commands / Platform support / C library / License）。仅读取公开 README 与元数据做能力对比，未读取/复制/移植其源代码。
 - Windows UI Automation 官方文档
 - MCP 官方规范
 - Chrome DevTools Protocol 官方文档

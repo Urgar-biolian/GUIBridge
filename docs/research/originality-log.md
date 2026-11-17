@@ -39,9 +39,9 @@
 | 自修复与歧义停止 | hint 重扫、唯一候选、复验、pending 补丁；歧义 100% 停止 | S4-a `c92f3b4` |
 | 独立验证器 | 隔离 worktree + `allowed_files` 范围 + 测试退出码 | `packages/execution/verifier.py`；S3 |
 | A/B/C benchmark 与负例 | 坐标回放 / 无语义验证 / 语义+后置验证；禁用目标负例 | `tests/bench/`；S5 `0f1a4d5` |
-| Capability-Aware Router | app×operation 能力表 + 干扰策略 + 通道降级 | 本文件 §6；Phase 0 草案 |
-| FocusGuard 四态 | 成功/成功但干扰/失败/无法确认；“未观察”不等于“无干扰” | 本文件 §4；Phase 0 草案 |
-| Trae 四接口契约 | 前置/步骤/后置/证据；回复文本一律不可信 | 本文件 §5；S2/S3 实现 |
+| Capability-Aware Router | app×operation 能力表 + 干扰策略 + 通道降级 | `guibridge-design.md` §3；Phase 0 草案 |
+| FocusGuard 四态 | 成功/成功但干扰/失败/无法确认；“未观察”不等于“无干扰” | `guibridge-design.md` §4；Phase 0 草案 |
+| Trae 四接口契约 | 前置/步骤/后置/证据；回复文本一律不可信 | `guibridge-design.md` §5；S2/S3 实现 |
 
 ## 4. 与竞品存在相似性的部分
 
@@ -96,3 +96,4 @@
 | 日期 | 变更 | 复核 |
 |---|---|---|
 | 2026-11-17 | Phase 0 初稿：公共原理、独立设计、相似性、依赖许可证 | 待 B 线复核 |
+| 2026-11-17 | 复核 agent-desktop 公开 README（Apache-2.0、三平台 AX/UIA/AT-SPI、CLI+C 库+MCP、headless 声明、`error.disposition.retry` 重试纪律），更新 competitor-analysis §2/§3；修正 §3 交叉引用指向 `guibridge-design.md` §3/§4/§5；仅公开资料，无源码引用 | 待 B 线复核 |
