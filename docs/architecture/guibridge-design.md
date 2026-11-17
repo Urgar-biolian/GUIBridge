@@ -307,12 +307,13 @@ class ActionResult:
 
 ### 11.5 B 线裁决清单（解锁 Phase 2 的决策议程）
 
-11.2 是“确认实测事实”的核对项；本节是 B 线需要**做出决定**的离散决策，每项给出选项与影响。编号用 R（裁决）以区别于 `docs/team-plan.md` 第 3 节已确认的历史决策 D1–D7。G0 通过 = 下列 R1–R5 落定 + 11.2 事实核对完成 + 双人 approve 留痕。
+11.2 是“确认实测事实”的核对项；本节是 B 线需要**做出决定**的离散决策，每项给出选项与影响。编号用 R（裁决）以区别于 `docs/team-plan.md` 第 3 节已确认的历史决策 D1–D7。G0 通过 = 下列 R1–R6 落定 + 11.2 事实核对完成 + 双人 approve 留痕。
 
 - **R1 契约冻结**：是否把草案 Router/FocusGuard/分类/重试/影响门/桥接从“草案”转冻结？选项：(a) 全部冻结进入 Phase 2；(b) 先冻结 Router+FocusGuard+分类，重试/影响门/桥接随 Phase 2 迭代。影响：决定 Phase 2 可依赖的契约面。
 - **R2 MCP 信封是否扩展**（11.4 差异 1/2）：冻结两态信封无法表达 `UNCONFIRMED`/风险。选项：(a) 扩展 `api.md` 增加 `state`/`risk` 字段（契约改动，双人 approve，原则 6 语义对外保留）；(b) 不改 `api.md`，`UNCONFIRMED` 对外退化为失败、仅在引擎内部保留（`legacy_bridge` 已演示该退化）。影响：原则 6 的对外可见性。
 - **R3 外部输入下的效果归因**（开放问题 5）：非输入通道窗口内有外部输入时 `verified=True` 是否降级 `UNCONFIRMED`？`FOREGROUND_INPUT` 自注入与外部输入如何分离？选项：(a) 契约层内置降级 + 分离自注入标记；(b) 维持实验层“污染弃用”，契约层暂不降级。影响：四态归因严谨度。
 - **R4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。影响：路由查表与工具分发一致性。
 - **R5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有“全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。
+- **R6 OCR/视觉通道路由语义**（原则 3 / 通道表「`OCR_VISION` 仅定位；若配合输入则继承输入风险」）：`StaticRouter` 现把 `OCR_VISION` 列入执行通道优先级，若某能力表条目把它标为 supported 且非 unknown 风险，路由会选它执行写操作——违反「OCR 仅定位、非后台输入」。当前实测表无此条目，已加完整性守护 `test_ocr_vision_not_a_background_execution_channel_for_writes` 锁定写操作不得声明 `OCR_VISION` 为后台执行通道（读/定位操作可合法用 OCR NONE 风险）。选项：(a) 路由层对写操作显式排除 `OCR_VISION` 执行选择（读操作保留），把原则 3 落为路由不变量；(b) 维持路由通用性，仅靠能力表数据纪律 + 配套输入通道继承风险。影响：原则 3 是否在路由层强制，及 OCR 作为读/定位通道的合法地位。属草案契约行为决策，未单方面改动路由。
 
-**当前可执行证据**：227 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）+ 自绘靶应用负例 run `20261117T102927Z`（内容无 UIA 语义）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测；Trae 适配器（能力 C）安全前置与回复提取纯逻辑亦有单测（`tests/test_trae_adapter_guards.py` 16 例：agent 模式未批准拒绝、非法模式拒绝、`extract_last_reply` 边界、审批文本提示——均在 CDP/store 之前触发，无 live 写、未改适配器或冻结契约）；独立验证器 `Verifier` 测试命令不可运行/超时必判失败（exit 127，即便有范围内改动且 agent 声称完成亦不 `verified`，`tests/test_verifier.py` 新增 3 例）。R1–R4 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
+**当前可执行证据**：228 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）+ 自绘靶应用负例 run `20261117T102927Z`（内容无 UIA 语义）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测；Trae 适配器（能力 C）安全前置与回复提取纯逻辑亦有单测（`tests/test_trae_adapter_guards.py` 16 例：agent 模式未批准拒绝、非法模式拒绝、`extract_last_reply` 边界、审批文本提示——均在 CDP/store 之前触发，无 live 写、未改适配器或冻结契约）；独立验证器 `Verifier` 测试命令不可运行/超时必判失败（exit 127，即便有范围内改动且 agent 声称完成亦不 `verified`，`tests/test_verifier.py` 新增 3 例）；能力表完整性守护新增「写操作不得以 `OCR_VISION` 为后台执行通道」1 例（原则 3，路由层强制与否见 R6）。R1–R4、R6 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。
