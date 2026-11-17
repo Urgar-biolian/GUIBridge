@@ -1,0 +1,61 @@
+# DRAFT measured capability table — pending B-line approval (design doc §11).
+# Risk values are MEASURED in Phase 1 experiments, not assumed. Channels absent
+# from an entry were not measured and stay unavailable. UNKNOWN risk is never
+# auto-allowed (policy.py); it surfaces a measurement gap rather than guessing.
+status: draft
+schema_version: 1
+entries:
+  - app: native-test
+    operation: invoke
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background invoke, cursor 0, foreground switched to target"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start invoke, transient focus switch, external_input false"
+      - "run 20261117T082451Z E3: SendInput click verified, physical_input interference"
+
+  - app: native-test
+    operation: set_value
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background SetValue initial->bg-value, cursor 0, foreground switch"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start SetValue, transient focus switch"
+      - "run 20261117T082451Z E3: SendInput text verified, cursor displacement 95px"
+
+  - app: native-test
+    operation: toggle
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background Toggle off->on, cursor 0, foreground switch"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start Toggle, transient focus switch"
+      - "run 20261117T082451Z E3: SendInput checkbox click verified, cursor displacement 41px"
+
+  - app: trae
+    operation: send_task
+    channels:
+      app_protocol: {supported: true, risk: unknown}
+      uia: {supported: false, risk: unknown}
+    notes: >
+      APP_PROTOCOL (loopback CDP) functionally proven: F3/F6/F12 submit->status->readback
+      and authorized live Chat reply OK (run 20261117T090104Z). Focus interference has NOT
+      been measured with FocusGuard around the CDP action, so risk stays unknown pending a
+      Phase 2 measurement; it must not be assumed logical_only. UIA exposes no chat
+      composer/send (E5, 111 framework nodes only).
+    evidence:
+      - "src/probe/PROBE_REPORT.md F3/F6/F12; run 20261117T090104Z E6 live Chat OK"
+      - "run 20261117T090104Z E5: Trae UIA tree has no chat composer/send"
+
+  - app: wechat
+    operation: send_message
+    channels:
+      uia: {supported: false, risk: unknown}
+    unsupported_reason: >
+      wechat 4.x: visible window only 4 UIA framework nodes (Window/2 Pane/TitleBar),
+      no Edit/Button — run 20261117T090104Z E5 (PID-matched EnumWindows scan).
+    evidence:
+      - "run 20261117T090104Z E5: hwnd 133592 class Qt51514QWindowIcon, node_count 4, has_edit false, has_button false"

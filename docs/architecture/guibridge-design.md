@@ -62,7 +62,7 @@ GUIBridge 是面向 Windows 的通用桌面应用语义控制与跨 Agent 协作
 3. 按策略过滤；需审批且未批准则跳过。
 4. 返回首个可用通道及其 fallbacks；无可用通道返回 `channel=None` 并给出原因（含负例证据，如“微信 4.x UIA 无节点”）。
 
-Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experiments.py` 的 E5 扫描输出并人工复核。
+Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experiments.py` 的 E5 扫描输出并人工复核，落为草案数据文件 `packages/routing/capabilities.draft.yaml`，由 `packages/routing/capability_table.py` 的 `load_capability_table()` 加载为 `Capability` 对象供 `StaticRouter` 消费。风险值取自实测（原生 UIA=`focus_switch`）；未用 FocusGuard 实测的通道（如 Trae CDP）保持 `unknown`，不得假设为 `logical_only`。
 
 ### 3.5 Phase 1 实测修正（2026-11-17）
 
@@ -233,6 +233,7 @@ class ActionResult:
 | 四态分类 `classify()` | `packages/focusguard/classify.py`、第 4.2 节 | 草案（含单测） |
 | UIA 执行通道与风险声明 | `src/probe/uia_exec.py`、第 3.5 节 | 草案 |
 | Trae 四接口契约 | 第 5.2 节 | 草案（Phase 2 正式接入） |
+| 实测能力表 + 加载器 | `packages/routing/capabilities.draft.yaml`、`capability_table.py` | 草案（含单测） |
 
 ### 11.2 B 线 approve 检查项
 
@@ -243,6 +244,7 @@ class ActionResult:
 - [ ] 确认 E2 停留曲线仅覆盖 57–138 ms，<50 ms 漏检率未量化，不得外推为“任意瞬时切换可检出”。
 - [ ] 确认 Trae 主通道为 `APP_PROTOCOL`（loopback CDP），live 证据仅限授权的一次 Chat 无害消息；agent 模式默认手动审批。
 - [ ] 确认微信负例（可见窗口仅 4 个 UIA 框架节点）作为“不支持后台语义操作”的证据。
+- [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae CDP 在 FocusGuard 实测前保持 `unknown`（不假设 `logical_only`），并认领 Phase 2 测量任务。
 - [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
 
 ### 11.3 实测依据索引
@@ -251,4 +253,5 @@ class ActionResult:
 - 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）。
 - 四态分类单测：`tests/test_phase1_classification.py`（11 例）——含 `detect_unexpected_focus_switch` 聚合逻辑：轮询漏记、仅事件钩子捕获的瞬时切换仍判为干扰（E1c 发现的可执行证据）。
 - 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
+- 实测能力表单测：`tests/test_capability_table.py`（6 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、Trae CDP unknown 不自动放行。
 - 代码提交：`4665ab8`（P0 实验改进）。
