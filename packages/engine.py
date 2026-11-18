@@ -126,6 +126,21 @@ class GUIBridgeEngine:
             pass
         return [0, 0, 0, 0]
 
+    def _trae_hwnd(self) -> int | None:
+        try:
+            from perception.uia import UIAChannel
+            windows = UIAChannel().list_windows(["Trae.exe"])
+            if windows:
+                return int(windows[0]["window_id"], 16)
+        except Exception:
+            pass
+        return None
+
+    def _focus_guard(self):
+        from packages.focusguard.monitor import Win32FocusGuard
+        hwnd = self._trae_hwnd()
+        return Win32FocusGuard(hwnd) if hwnd is not None else None
+
     # -- perception ----------------------------------------------------
     def inspect_window(self, window_id: str, max_depth: int = 18) -> list[dict]:
         self._audit("gui.inspect_window", {"window_id": window_id, "max_depth": max_depth})
@@ -262,6 +277,44 @@ class GUIBridgeEngine:
                                         approve_agent=approve_agent)
         return {"task_id": record.task_id, "app": record.app, "state": record.state,
                 "transitions": record.transitions}
+
+    def send_task_routed(self, project_path: str, task: str, mode: str = "chat",
+                         approval_token: str | None = None, policy=None) -> dict:
+        """Opt-in G1 routed path (additive; frozen send_task/perform_action unchanged).
+
+        Runs the headline send_task deliverable through the approved integration
+        pipeline: capability routing -> approval double-gate -> FocusGuard-wrapped
+        send -> four-state classify -> principle-6 retry -> evidence persisted to
+        store ids -> R2a extended envelope. Chat-only here; agent live stays in the
+        isolated-demo handoff path."""
+        self._audit("trae.send_task_routed", {"project_path": project_path, "mode": mode})
+        self._require_allowed(TRAE_WINDOW)
+        if mode != "chat":
+            raise AdapterError("not_submitted", "routed send_task is chat-only; agent uses isolated handoff")
+        from packages.execution.integrated import IntegratedExecutor
+        from packages.routing import InterferencePolicy, load_capability_table
+        guard = self._focus_guard()
+        if guard is None:
+            raise SafetyError("Trae window not found for FocusGuard")
+        cap = load_capability_table()[("trae", "send_task")]
+
+        def operation(channel):
+            try:
+                self.adapter.send_task(project_path, task, mode)
+                return (True, None)
+            except AdapterError as e:
+                return (False, e.code)
+
+        executor = IntegratedExecutor(
+            guard, self.store, TRAE_WINDOW,
+            consume_approval=lambda sid, act, tok: self.store.consume_approval(tok, sid, act))
+        outcome, envelope = executor.run(
+            cap, policy or InterferencePolicy.STRICT_NO_INTERFERENCE,
+            "trae.send_task", "send_task", operation, approval_token)
+        return {"executed": outcome.executed, "denied_reason": outcome.denied_reason,
+                "approval_id": outcome.approval_id, "attempts": outcome.attempts,
+                "channel": outcome.decision.channel.value if outcome.decision.channel else None,
+                "envelope": envelope.to_dict() if envelope is not None else None}
 
     def get_status(self, task_id: str) -> dict:
         self._audit("trae.get_status", {"task_id": task_id})
