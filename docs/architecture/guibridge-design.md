@@ -259,6 +259,8 @@ class ActionResult:
 | R4 选项 (b) 操作名 crosswalk 候选 | `packages/routing/operation_names.py`、第 11.5 R4 | 草案（8 例单测含漂移守护 + 真实表实测一致；未改冻结 TOOL_SPECS） |
 | R6 选项 (a) OCR 感知路由候选 | `packages/routing/ocr_guard.py`、第 11.5 R6 | 草案（7 例单测 + run `20261117T111617Z` 实测；未替换 `StaticRouter`） |
 | Phase 2 集成适配层候选（路由→审批双门→ guarded 执行→重试→四态信封） | `packages/execution/routed_executor.py`、第 11.4 差异 4/5/6 | 草案（11 例单测；注入式 execute/consume_approval，未接入冻结 engine/ActionExecutor/SafetyGate） |
+| G1 证据落库桥 + 端到端集成执行器 + 引擎可选 routed 入口 | `packages/focusguard/evidence_bridge.py`、`packages/execution/integrated.py`、`engine.send_task_routed`、第 11.4 G1 落地 | 增量接入（17 例单测；冻结默认路径未改，chat-only） |
+| S4-a heal 提案→store 审核桥 | `packages/semantic/heal_store.py`（`recording_patch_writer`） | 增量（4 例单测；heal 文件审计 + `store.heal_patches` pending 行同 patch_id，歧义/验证拒绝两者皆无；不改冻结 resolver/heal/cache/store） |
 
 ### 11.2 B 线 approve 检查项
 
