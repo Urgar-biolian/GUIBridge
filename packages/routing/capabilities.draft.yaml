@@ -1,11 +1,12 @@
-# DRAFT measured capability table — pending B-line approval (design doc §11).
+# FROZEN measured capability table — approved 2026-11-17 (owner sign-off, design §11.5 R1).
+# Filename retains ".draft" for load-path stability; governance status is frozen.
 # Risk values are MEASURED in Phase 1 experiments, not assumed. Channels absent
 # from an entry were not measured and stay unavailable. UNKNOWN risk is never
 # auto-allowed (policy.py); it surfaces a measurement gap rather than guessing.
 # impact (low/high) and idempotent are operation-level metadata: HIGH impact
 # always requires user approval (principle 7) even on a NONE-risk channel;
 # idempotent feeds the retry policy (principle 6). Defaults: low / true.
-status: draft
+status: frozen
 schema_version: 1
 entries:
   - app: native-test
