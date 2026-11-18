@@ -9,17 +9,21 @@ sends nothing, and exits 3.
 Run with --authorize-live-write ONLY after the user has explicitly authorized a
 one-off harmless Chat send. Chat mode only; agent mode is never exercised (it may
 auto-edit files / run long tasks). The fixed message asks Trae to reply "OK" and
-do nothing else. --project-path must point to an ISOLATED demo workspace, never a
-real user project; the probe verifies zero workspace change after the send. Two
+do nothing else. --project-path must be a git repo whose basename matches the running
+Trae window; the probe verifies zero workspace change after the send. Chat-only harmless
+sends ran under owner authorization on the matched workspace (chat cannot edit files);
+agent mode is never exercised here and stays isolated-demo-only. Two
 live-path guards make that check meaningful: --project-path must be a git repo
 (a non-git dir yields a false [] == [] "unchanged"), and the running Trae window
 title must contain the project basename (so the send and the zero-change check
 target the SAME workspace; mismatch refuses). Writes
 var/experiments/<run_id>/trae_send_focus.json (gitignored).
 
-Status: instrument dev-complete; the live measurement itself is PENDING R5
-authorization and has not been run. The refusal gate is the only path verified
-without authorization.
+Status: live measurement RUN under owner authorization 2026-11-17 (chat-only):
+clean trials 20261118T044436Z / 20261118T044518Z (latter claimed_done + reply OK +
+zero workspace change) grade the send_task send-click risk none; a polluted first
+trial 20261118T044332Z (external input) was discarded. Without --authorize-live-write
+the refusal gate still connects to nothing and exits 3.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ import datetime
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,7 +129,14 @@ def main() -> int:
     record = run.result
     task_id = record.task_id
 
+    # Poll for the reply OUTSIDE the FocusGuard send window so reply_ok is meaningful
+    # without lengthening/polluting the measured send-click interference window.
+    deadline = time.time() + 30.0
     status = adapter.get_status(task_id)
+    while status.state not in ("claimed_done", "verified", "failed", "awaiting_approval") \
+            and time.time() < deadline:
+        time.sleep(1.0)
+        status = adapter.get_status(task_id)
     result = adapter.read_result(task_id)
     after_files = _git_changed_files(project_path)
     workspace_unchanged = after_files == before_files

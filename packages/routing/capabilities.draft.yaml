@@ -49,18 +49,22 @@ entries:
     impact: high
     idempotent: false
     channels:
-      app_protocol: {supported: true, risk: unknown}
+      app_protocol: {supported: true, risk: none}
       uia: {supported: false, risk: unknown}
     notes: >
-      APP_PROTOCOL (loopback CDP) functionally proven: F3/F6/F12 submit->status->readback
-      and authorized live Chat reply OK (run 20261117T090104Z). The read path is measured
-      interference-free (run 20261117T092712Z, see get_task_status/read_task_result), but the
-      send click itself has NOT been FocusGuard-measured, so send_task risk stays unknown
-      pending an authorized live measurement; it must not be assumed logical_only. UIA exposes
-      no chat composer/send (E5, 111 framework nodes only).
+      APP_PROTOCOL (loopback CDP) send click NOW FocusGuard-measured interference-free:
+      two clean trials (run 20261118T044436Z cursor 0/no switch/ext false; run
+      20261118T044518Z clean + claimed_done + reply OK + workspace unchanged); a first
+      polluted trial (20261118T044332Z, external input cursor 1104/ext true) was discarded.
+      Measured risk none via APP_PROTOCOL. HIGH impact STILL requires user approval
+      (principle 7) orthogonal to the none risk; non-idempotent (principle 6). UIA exposes
+      no chat composer/send (E5, 111 framework nodes only) and stays unavailable/unknown.
     evidence:
       - "src/probe/PROBE_REPORT.md F3/F6/F12; run 20261117T090104Z E6 live Chat OK"
       - "run 20261117T090104Z E5: Trae UIA tree has no chat composer/send"
+      - "run 20261118T044436Z send-click clean: cursor 0, no focus switch, ext false"
+      - "run 20261118T044518Z send-click clean + claimed_done + reply OK + workspace unchanged"
+      - "run 20261118T044332Z discarded: external-input pollution (cursor 1104, ext true)"
 
   - app: trae
     operation: get_task_status

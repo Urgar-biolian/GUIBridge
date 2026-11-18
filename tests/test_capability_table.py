@@ -57,11 +57,13 @@ def test_selfdrawn_negative_returns_reason():
     assert "self-drawn" in decision.reason.lower()
 
 
-def test_trae_app_protocol_unknown_risk_not_auto_allowed():
+def test_trae_send_task_measured_none_still_gated_by_approval():
     cap = _table()[("trae", "send_task")]
-    assert cap.risk_of(Channel.APP_PROTOCOL) is InterferenceRisk.UNKNOWN
-    decision = StaticRouter().route(cap, InterferencePolicy.FOREGROUND_ALLOWED, approved=True)
-    assert decision.channel is None
+    assert cap.risk_of(Channel.APP_PROTOCOL) is InterferenceRisk.NONE
+    denied = StaticRouter().route(cap, InterferencePolicy.FOREGROUND_ALLOWED, approved=False)
+    assert denied.channel is None
+    allowed = StaticRouter().route(cap, InterferencePolicy.FOREGROUND_ALLOWED, approved=True)
+    assert allowed.channel is Channel.APP_PROTOCOL
 
 
 def test_trae_read_interfaces_measured_none_allowed_under_strict():
