@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import uuid
@@ -32,9 +34,18 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
+def _force_rmtree(path: Path) -> None:
+    # git marks object files read-only on Windows; plain rmtree raises PermissionError.
+    os.chmod(path, stat.S_IWRITE)
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            os.chmod(os.path.join(root, name), stat.S_IWRITE)
+    shutil.rmtree(path)
+
+
 def bootstrap_worktree(src: Path, dst: Path) -> Path:
     if dst.exists():
-        shutil.rmtree(dst)
+        _force_rmtree(dst)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns(".git", "node_modules"))
     _git(dst, "init", "-q")
     _git(dst, "add", ".")
@@ -138,7 +149,7 @@ def run_demo(workdir: Path, keep: bool = False) -> dict:
     }
     store.close()
     if not keep:
-        shutil.rmtree(repo, ignore_errors=True)
+        _force_rmtree(repo)
     return summary
 
 
