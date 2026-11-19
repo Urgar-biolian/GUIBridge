@@ -639,7 +639,7 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **唯一富 UIA**：130352Z（QR 扫码登录）聊天主窗 **800×600** 阶段读到 **52 节点 / 22 ButtonControl**（`mmui::MainTabBar`/`XTabBarItem`/`TitleBar` 等 chrome）；但同 run 稍后截图时窗已变 **1118×809** ⇒ 富 UIA 只存在于登录后短暂的默认尺寸阶段。
 - **auto-enter 路径错过该阶段**：直接以保存几何 **1118×809** 创建、立即进自绘态。0.15s 高频轮询 25s（140725Z/141058Z 时间线）恒 **2 节点**（PaneControl×2 = Qt main + `MMUIRenderSubWindowHW`），无 Edit/Document/Button ⇒ 稳定态**零 UIA 写/导航目标**。
 - **恢复手段实测全失败**（141240Z `chat_uia_diag`）：子窗 UIA=0；隐藏桌面内 `SetForegroundWindow` 返回 **false**（跨桌面拿不到前台，符合 Windows 不变量）；`SetWindowPos` 改 800×600 返回 true 但窗**弹回 1118×809**、节点仍 2。
-- **结论**：隐藏桌面「登录 + 登录页导航」零干扰已证实；登录后聊天**稳定态自绘零 UIA** ⇒ 零干扰发信仍不可行；富 UIA 窗口期仅 QR 登录瞬间、不可靠复现，**不能**作为稳定控制通道。导航级 PostMessage 点击仅在富 UIA 阶段有已知 rect 目标。
+- **结论（本节推断已被 §25 E15 实测推翻）**：隐藏桌面「登录 + 登录页导航」零干扰已证实；登录后聊天**稳定态自绘零 UIA** 属实，但由此推断「零干扰发信仍不可行」**错误**——§25 实测用 OCR 定位 + 对 Qt 主窗 PostMessage（WM_CHAR 注入 + 坐标点发送）达成**零干扰发信**。富 UIA 窗口期仅 QR 登录瞬间、不可靠复现，**不能**作为稳定控制通道；但**不需要** UIA 语义节点也能发信。导航级 PostMessage 点击在稳定态同样可用（目标 rect 来自 OCR 而非 UIA）。
 
 ### 23.3 操作教训（重复手机登录）
 
@@ -669,3 +669,35 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - `hidden_capture.screenshot_hidden_desktop(worker, out_path)` → stitch 整屏 PNG + 虚拟屏几何 + 各窗 rect；只读、不改主机前台/光标。`capture_full(worker,out_dir)` 同时返回 A/B 两法供对照。
 - 保留/隐私由**调用方**决定：benign 靶可保留；真实应用（微信等含私聊/联系人）须 hash-then-delete 或 redact 后再持久化。
 - 边界：拼接 z-order 按面积近似（大窗先画）、非真实 z-order；背景黑；**不修改冻结 Channel enum**；尚未接入冻结引擎/MCP 契约（使用阶段集成属契约改动，需双人 approve）。
+
+## 25. 隐藏桌面零干扰发信实测成立（E15/E15a，推翻 §19–§23「零干扰发不可行」；`experiment_wechat_hidden_send.py` 权威 run `20261119T144838Z` / 弱验证弃用 `144554Z` / 登录超时 `144034Z`；`experiment_selfdrawn_hidden.py` run `20261119T144530Z`）
+
+### 25.1 起因与自我纠错
+
+- 用户质疑：「OCR 能定位隐藏聊天的输入框/发送键坐标，那你做发信测试了吗？都能截屏了为什么不可靠？你在找什么借口」。此前 §19–§23 的「零干扰发信不可行」是**未实测推断**：只测过登录 Qt 按钮的 PostMessage（E13b），从未对**聊天渲染面/输入框/发送键**做过 PostMessage 发信实验，就把「PostMessage 对自绘不可靠」当定论。**实测优于假设**：该推断错误。
+- E15a 先证 PostMessage 鼠标能驱动隐藏桌面自绘面：`selfdrawn_app`（GDI 自绘按钮、无子控件）隐藏桌面起，PostMessage `WM_LBUTTONDOWN/UP` 客户区坐标 (68,95) → 标题 `clicked=1`（`mouse_click_registered=true`）；`WM_PASTE`/`WM_CHAR` 对该无处理器的自绘窗无效（`text_messages_effect=false`，符合预期）。主机前台不变、`closedesktop_ok=true`。⇒ 推翻「PostMessage 对自绘一律不可靠」的笼统说法。
+
+### 25.2 E15 测通的零干扰发信通道（权威 run `20261119T144838Z`）
+
+隐藏桌面 + 第二账户登录（免扫码 auto-enter，主机零干扰）后，对**Qt 主窗 hwnd**（非渲染子窗）PostMessage：
+
+| 步骤 | 通道 | 目标 hwnd | 结果 |
+|---|---|---|---|
+| 定位输入框/发送键/会话行 | worker PrintWindow → OCR（窗口局部 bounds + 窗原点 → 屏幕 rect） | — | 文件传输助手行 rect `[875,436,985,461]`、标题门控通过 |
+| 打开目标会话 | PostMessage 坐标点击会话行 | 主窗 | `title_verified=true` |
+| 注入文本 | `WM_CHAR`(0x0102) 逐字符 | **主窗 5377550** | OCR 复核输入框带（y>0.7h）暂存=true |
+| 注入对照 | `WM_PASTE`(0x0302) / `WM_CHAR`→渲染子窗 | 渲染 13045368 / 主窗 | 全 false（仅 WM_CHAR→主窗 成功） |
+| 发送对照① | PostMessage 坐标点「发送」 | 渲染子窗 13045368 | `bubble_in_message_area=true` 但 `composer_empty=false` ⇒ **未发**（输入框没清） |
+| 发送② | PostMessage 坐标点「发送」 | **主窗 5377550** | `bubble_in_message_area=true` **且** `composer_empty=true` ⇒ **真发出** |
+
+- **无漏洞验证**：发送成功判据 = 消息区出现气泡（bounds[3]<0.7h）**且输入框清空**（y>0.7h 无该文本）。仅「任意位置出现文本」会被输入框残留/历史气泡假阳性污染（144554Z 弱验证已弃用）。输入框清空是发送的决断信号（微信仅在发送成功时清 composer）。
+- **主机零干扰**：`host_foreground_changed=false`（前台 921150 全程不变）、光标不动；不需要 SendInput、不需要 SwitchDesktop、不碰主机会话。
+- **机制定论**：微信 4.x Qt **主窗** hwnd 把 `WM_CHAR` 与鼠标消息路由到聊天 widgets；渲染子窗 `MMUIRenderSubWindowHW` 不接收这些消息（点击/注入均无效）。故零干扰写通道 = **OCR 定位 + 对主窗 PostMessage**，与「渲染面 UIA 零节点」不矛盾（不需要 UIA 语义）。
+
+### 25.3 边界与清理
+
+- 目标仅**文件传输助手**（benign 自传输），标题门控防误发；发送前文本由用户授权（本次质疑即授权该受控发信测试）。**未来每次发信仍须逐次授权**；高影响写操作默认手动审批（原则 7）。
+- 隐私：OCR boxes 仅内存；持久化仅 benign 标签/rect/布尔；可读 PNG repo 外 OCR 后即删；私聊/联系人文本不入库。
+- 清理核实：桩进程 `stub_alive=false`、`survivors_after=[]`、主机微信树完整（31388+子进程 33944/34276/34352/34436）。**`closedesktop_ok=false`**（E15 三 run 均 false，E14/E15a 为 true）：桩已杀、无孤儿，进程退出即释放桌面句柄，但 CloseDesktop 调用本身返回 false 的原因待查（疑 worker/OCR 线程仍持桌面引用）；不影响主机安全。
+- **契约影响**：本通道使 wechat×send_message 可声明**零干扰**（risk none，实测），取代 §20 前台 PHYSICAL_INPUT 提案为更优路线；但 Channel enum 与 capabilities.draft.yaml **仍冻结**，新增 hidden_desktop 写通道属契约数据变更，须提案 + **双人 approve**，未单方放行。正式适配器/引擎/MCP 接入留 G1 门 + B 裁决。
+- **完成度**：E15 为**探针实测 verified**（非适配器代码路径）；`packages/adapters/wechat/` 现有适配器走前台 OCR+剪贴板，**尚未**实现本隐藏桌面 PostMessage 通道，不得把探针 verified 冒充适配器 live verified。
