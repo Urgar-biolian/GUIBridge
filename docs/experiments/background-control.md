@@ -518,3 +518,39 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 
 **隐私与清理核实**：OCR 识别文本**绝不记录/保存/显示**——JSON 仅含 `bounds`/`confidence`/`text_box_count`/`locate_only`，`text_redacted=true`、无任何 text 字段；可读 PNG 抓到 `tempfile.mkdtemp`（repo 外）、OCR 后 `os.remove` 即删（核实临时目录无残留 PNG、repo 无微信可读图）；原始 JSON gitignored 不入库。测后微信**重新最小化**（渲染面回屏外 -31991,-32000）、前台**还给用户原窗**（921150 Qoder CN）、pid 31388 仍正常运行——leave-as-found。
 - 复跑命令：`python -X utf8 src/probe/experiment_wechat_visible.py`（**须用户授权弹前台一次**；只读、自动恢复+最小化+还前台、OCR 脱敏即删图）。
+
+## 20. 微信前台 OCR+剪贴板发信演示（E11，`experiment_wechat_send.py`，权威 send run `20261119T120734Z` / navigate `20261119T120511Z` / stage `20261119T120541Z` / recon `20261119T115851Z` / 首跑 navigate `20261119T120047Z` 选错行弃用）
+
+动机：用户要求「**通过隐藏桌面**在微信给文件传输助手发信」。隐藏桌面发微信**实测不可行**（第 19 节三条硬墙：① 单实例+已登录 ⇒ `CreateProcess lpDesktop` 只弹主机窗、干净隔离须杀用户会话；② 渲染面自绘 UIA 零语义节点、标准消息无效；③ 隐藏桌面不给 `SendInput` 第二光标、confined 须 `SwitchDesktop` 非主机安全）。**不假装隐藏桌面成功**；经用户明确改授权「**改用前台 OCR+剪贴板演示发**」，目标=用户自己的**文件传输助手**（benign 自传输）。本节是**一次性前台演示脚本，非 WeChat 适配器能力**（仓库无微信适配器）。
+
+### 20.1 方法（累积门控 `--upto recon|navigate|stage|send`）
+
+恢复微信前台（`ShowWindow(SW_RESTORE)`+`ensure_foreground` Qt 主窗）→ 点搜索框/`Ctrl+F` → 剪贴板 `Ctrl+V` 粘贴「文件传输助手」→ **点顶部干净精确匹配联系人结果行** → **OCR 校验右栏标题 == 文件传输助手（防误发门控）** → 点右栏底部输入框 → `Ctrl+A`+`Delete` 清草稿 → 剪贴板 `Ctrl+V` 暂存测试文本 → **OCR 复核暂存** → **【发送前手动确认文本】** → 点「发送」按钮 → **OCR 复核消息区气泡**。`SendInput` 按键/`mouse_event` 点击=前台物理输入；FocusGuard 包裹发送动作；任一门控失败即停、**不自动重试**（原则 6/7）。测后 `SW_MINIMIZE`+`force_fg` 还前台（leave-as-found）。
+
+### 20.2 结果（权威 send run `20261119T120734Z`）
+
+| 门控/维度 | 实测 |
+| --- | --- |
+| 右栏标题校验 | **== 文件传输助手**（title_region [390,56,499,80]）✓ 防误发 |
+| 文本暂存复核 | ✓ 输入框 OCR 到测试文本 |
+| **发送气泡复核** | **✓ effect_verified=true**：完整文本气泡 @ [930,600,1240,628]（右栏消息区）+ 左栏会话预览 @ [145,144,341,164] |
+| 四态 | **success_with_interference**（前台物理输入，正确声明） |
+| 干扰证据 | cursor_displacement=**553**（移鼠标点发送=PHYSICAL_INPUT）、unexpected_focus_switch=false（微信已在前台无切走）、external_input=true、event_hook_active=true |
+| 清理 | 微信最小化（渲染面回屏外）、前台还 921150 Qoder CN、无残留 CEF 窗、pid 31388 正常 |
+
+**结论**：前台 OCR+剪贴板路径**真实发信达成并 OCR 读回验证**（非模拟）。这是**前台演示**（`PHYSICAL_INPUT`/`success_with_interference`），**不是隐藏桌面、不是后台、不是适配器能力**。微信无后台语义通道（第 19 节），可行路线仅此前台演示 + OCR 定位只读。
+
+### 20.3 关键教训（首跑弃用 + 修正）
+
+1. **搜索结果选行**：首跑 `20261119T120047Z` 用「最大 y」启发式选了底部「文件传输助手」（**搜一搜/web 搜索建议脚注**），点击**误开一个 CEF 搜索窗**（wechatappex.exe `Chrome_WidgetWin_0`）且右栏标题门控失败。修正：只取 **`text.strip()==文件传输助手` 的干净精确匹配联系人结果行、y>100（避开搜索输入回显）、按 y 升序取顶部行**；排除「聊天记录」行与底部脚注。重跑 navigate 标题校验通过。
+2. **隐私**：搜索结果含「聊天记录」行带**私有联系人姓名**——`search_target_hits` 仅保留干净目标标签行、其余 `<redacted>`；首跑泄漏私有姓名的 JSON 已删除。持久化仅含测试文本（自建 benign）+ 目标系统标签，**无聊天记录私有内容**（核实 `contains 聊天记录=False`）。可读 PNG 抓 repo 外临时目录、OCR 后 `os.remove` 即删。
+3. **微信 4.x 混合窗架构 + 前台锁**：Qt 主窗（weixin.exe `Qt51514QWindowIcon`）+ CEF 窗（wechatappex.exe `Chrome_WidgetWin_0`）。最小化 Qt 主窗后 **CEF 窗抢前台**，`wh.ensure_foreground`（仅附着目标线程）对**他进程前台锁失败**（ok=False）。修正 `force_fg`：**同时附着当前前台线程 + 目标线程**再 `SetForegroundWindow`，可靠还前台。误开的 CEF 窗用 `WM_CLOSE` 优雅关闭（**绝不杀共享 wechatappex.exe 进程**）。
+4. **发送按钮 vs 回车**：用 OCR 定位「发送」按钮点击（非假设回车发送），更明确可靠；发送后 OCR 复核完整文本气泡才算 verified。
+
+### 20.4 限制与边界
+
+- **一次性演示脚本，非适配器**：无窗口白名单/失败即停的产品化封装；做成项目能力需新增 WeChat 适配器（发送前确认、失败即停、逐次授权），涉及 R4 操作名 crosswalk 留 B 裁决。
+- **前台干扰不可避免**：cursor_displacement=553 + 抢前台，声明 `PHYSICAL_INPUT`/`success_with_interference`；**非后台无干扰**。
+- 样本=单次发送、固定 benign 测试文本到文件传输助手；OCR 导航对布局/版本敏感（搜索行位置随版本变化），门控失败即停不重试。
+- 原始 JSON gitignored 不入库；复跑须用户授权（`--upto send` 触发真实发送，发送前手动确认文本）。
+- 复跑命令：`python -X utf8 src/probe/experiment_wechat_send.py --upto recon|navigate|stage|send [--text "..."]`（recon/navigate/stage 不发送；send 真实发送须授权+确认）。
