@@ -313,3 +313,50 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 | 目标恢复 | 15/15 |
 
 结论：在约 100 ms 停留与静默环境下，FocusGuard 的误报率与检出率以更大样本（30 负例 / 15 正例）复核仍为 0.0 / 1.0，强化了 E2 的小样本结论。限制不变：仅覆盖该停留时长与静默条件；<2 ms 瞬时切换的理论盲区见第 12 节；外部输入污染窗口会被剔除（本轮 0 个）。复跑命令：`python -X utf8 src/probe/focusguard_reliability.py`。
+
+## 15. 后台窗口消息输入实测（E7，`experiment_background_message.py`，run `20261119T103249Z`）
+
+动机：用户要求“测试多个应用，并调研不影响原始鼠标键盘输入的模拟点击/输入/触控方法”。网络调研（见 15.4）给出的主流说法是 `PostMessage`/`SendMessage` 投递 `WM_*`/`BM_*` 消息可“后台点击、不抢焦点、不动光标”。本节用 FocusGuard 在受控靶应用上**实测**该说法，而非采信厂商/博客声明。新增探针 `src/probe/postmessage_ops.py`（操作）与 `src/probe/experiment_background_message.py`（运行器）；`selfdrawn_app.py` 增加默认关闭的 `--title-status`/`--show-no-activate` 标志（不影响既有探针）。仅触碰自建受控靶窗口，不交互 Trae/微信、不发送消息、不用 SendInput。原始数据 `var/experiments/20261119T103249Z/background_message.json`（gitignore）。
+
+方法：每种操作预创建后台靶窗口（`SW_SHOWNOACTIVATE`），把中性窗口激活到前台、等待输入静默后执行一次，FocusGuard（2 ms 轮询 + `EVENT_SYSTEM_FOREGROUND` 钩子）包裹动作并独立回读效果。 provisional 通道名 `background_message`，**未改动冻结的 `Channel` 枚举**；四态由 `classify` 的“非前台输入”实测分支判定（verified + 无焦点切换 + 光标 0 ⇒ `success_no_interference_observed`）。
+
+### 15.1 标准控件靶应用（`native_test_app`，2 试验/操作，均后台起步）
+
+| 操作 | 消息 | 效果回读 | 光标位移 | 焦点切换 | 四态 |
+|---|---|---|---|---|---|
+| 点击按钮 | `BM_CLICK` → BUTTON 子窗口 | 2/2 clicked 0→1 | 0,0 | 2/2 true | success_with_interference |
+| 坐标点击按钮 | `WM_LBUTTONDOWN/UP` → BUTTON 子窗口 | 2/2 clicked 0→1 | 0,0 | 2/2 true | success_with_interference |
+| 设置文本 | `WM_SETTEXT` → EDIT 子窗口 | 2/2 `initial`→`bg-settext` | 0,0 | 2/2 false | success_no_interference_observed |
+| 逐字输入 | `WM_CHAR` → EDIT 子窗口 | 2/2 `initial`→`bg-char` | 0,0 | 2/2 false | success_no_interference_observed |
+| 勾选复选框 | `BM_CLICK` → CHECKBOX 子窗口 | 2/2 off→on | 0,0 | 2/2 true | success_with_interference |
+| UIA Invoke 对照 | `InvokePattern.Invoke` | 2/2 clicked 0→1 | 0,0 | 2/2 true | success_with_interference |
+
+### 15.2 自绘靶应用（`selfdrawn_app`，无子控件，2 试验，均后台起步）
+
+| 操作 | 消息 | 效果回读 | 光标位移 | 焦点切换 | 四态 |
+|---|---|---|---|---|---|
+| 坐标点击 painted 按钮 | `WM_LBUTTONDOWN/UP` → 顶层窗口 | 2/2 clicked 0→1（标题镜像回读） | 0,0 | 2/2 false | success_no_interference_observed |
+
+### 15.3 关键发现
+
+1. **“PostMessage 后台点击不抢焦点”对标准按钮/复选框不成立。** `BM_CLICK` 与坐标 `WM_LBUTTONDOWN/UP` 命中标准 BUTTON/CHECKBOX 子窗口时，效果达成、光标零位移，但 2/2 把前台切到目标窗口（`success_with_interference`）。这与既有 E1b“UIA Invoke=FOCUS_SWITCH”一致，且本轮 UIA Invoke 对照同样 2/2 切换——`BM_CLICK` 与 `InvokePattern.Invoke` 在按钮上行为等价，都激活窗口。再次印证项目核心论点：**光标零位移 ≠ 无焦点干扰**，且“声称无焦点 ≠ 实测无焦点”。
+2. **后台文本注入是真正无干扰的原语。** `WM_SETTEXT`/`WM_CHAR` 写入后台 EDIT 子窗口，2/2 效果达成、光标 0、无前台切换（`success_no_interference_observed`）。这是本轮唯一在标准控件上实测无干扰的写操作。
+3. **自绘窗口直接处理 `WM_LBUTTONDOWN` 时可无干扰命中。** 自绘靶窗口在自身 WndProc 处理鼠标消息、不走标准控件激活路径，2/2 效果达成且无焦点切换。但这是**应用相关**的：真实 Electron/DirectX/自绘应用可能完全忽略投递的鼠标消息（参见微信负例第 11.4 节、PROBE_REPORT 自绘负例），届时效果回读失败应判 `UNCONFIRMED`，不得声称成功。
+4. **不存在普适的“后台无干扰点击”。** 干扰与否取决于 (应用 × 控件类型 × 操作 × 消息种类)，必须逐组合实测。provisional `background_message` 通道值得纳入能力模型，但其风险**不能**静态标为 `LOGICAL_ONLY`：标准 EDIT 文本=实测无干扰；标准按钮点击=FOCUS_SWITCH；自绘直接消息=实测无干扰但应用相关、可能 UNCONFIRMED。
+
+### 15.4 调研来源与对照（仅参考公开文档，不复制/移植任何实现）
+
+- `PostMessage`/`SendMessage` 后台消息：适用于标准子窗口控件，绕过系统输入管线、不动光标；但鼠标消息常需控件处于活动窗口、自绘/DirectX 程序可能忽略，且有报告称点击会激活窗口（本轮实测证实按钮激活）。来源：CSDN《Win32消息模拟实现后台点击》《Windows后台模拟鼠标点击原理与实战》、V2EX《pywin32 实现的鼠标后台点击功能略有不足》、StackOverflow《PostMessage mouse click to background window》。
+- `SendInput`/`mouse_event`：系统级输入管线，真实移动光标、需前台 ⇒ `PHYSICAL_INPUT`（与本项目 FOREGROUND_INPUT 通道一致）。来源：CSDN《Windows输入模拟：从mouse_event到SendInput的演进》。
+- UIA `InvokePattern`：cua/dsh-cua/antigravity-auto-accept 宣称“无光标移动、无焦点窃取”；但经典 StackOverflow《避免在使用UI自动化时切换焦点》指出 UIA 故意先聚焦目标（`WM_SETFOCUS` 契约），菜单必须前台。本轮实测按钮 Invoke 2/2 焦点切换，支持“UIA 非普适无焦点”一方。
+- CDP `Input.dispatchMouseEvent`：注入浏览器自身输入管线、位于 OS 输入队列之上；dsh-cua 实测可信事件、光标零位移、前台不变、最小化仍可点击——与本项目 Trae 发送点击实测 `none`（run 20261118T044436Z/044518Z）方向一致。注意 `Target.createTarget` 不带 `background=True` 会激活窗口；React 受控输入需真实聚焦 + `Input.insertText`，直接改 `value` 无效。来源：browserbase《Adding Foreground Tab Tracking to CDP》、《WorkBuddy 实战》、dsh-cua。
+- `Windows.UI.Input.Preview.Injection`（InputInjector，触控/笔/鼠标/键盘）：需 `inputInjectionBrokered` 受限能力（UWP 打包），经系统输入注入、可定向到管理员应用；鼠标注入仍走系统管线，非默认后台无干扰。来源：Microsoft Learn《通过输入注入模拟用户输入》。
+- 虚拟 HID/Interception 驱动：内核级仍属系统输入管线 ⇒ `PHYSICAL_INPUT`，且有反作弊检测风险；本项目不安装驱动、不绕过安全桌面（原则 8），不在范围内。
+
+### 15.5 限制与弃用运行
+
+- 靶应用为自建 ctypes Win32 程序（标准控件 + 简化自绘），**不是**真实第三方应用；自绘靶窗口在 WndProc 直接处理 `WM_LBUTTONDOWN`，比真实 Electron/自绘应用更“配合”，结论不能外推为“所有自绘应用都接受后台消息”。
+- 每操作 2 试验，样本小；焦点切换由轮询 + 钩子并集判定，<2 ms 理论盲区见第 12 节。
+- 首次 run `20261119T102951Z` 的自绘 case 因初始标题无 `clicked=`  token 导致基线解析为 None、效果回读恒 false（`UNCONFIRMED`），且 evidence 的 after 字段在动作前求值；已修复验证逻辑与 evidence 采集（after 字段改为动作后求值）并以 `20261119T103249Z` 为权威。被弃用运行保留原文件，不覆盖、不挑选。
+- provisional `background_message` 通道与逐组合风险定级**尚未纳入冻结契约/能力表**，需 B 线评审与 owner approve 后方可落地；本节仅提供实测依据。
+- 复跑命令：`python -X utf8 src/probe/experiment_background_message.py`。
