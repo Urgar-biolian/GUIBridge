@@ -89,6 +89,10 @@ user32.SendMessageW.argtypes = [
 user32.SetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPCWSTR]
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.OpenDesktopW.restype = wintypes.HANDLE
+user32.OpenDesktopW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+user32.SetThreadDesktop.argtypes = [wintypes.HANDLE]
+user32.SetThreadDesktop.restype = wintypes.BOOL
 user32.PostMessageW.argtypes = [
     wintypes.HWND,
     wintypes.UINT,
@@ -254,12 +258,22 @@ def main() -> int:
     parser.add_argument("--auto-close-seconds", type=float, default=0)
     parser.add_argument("--occluder", action="store_true")
     parser.add_argument("--show-no-activate", action="store_true")
+    parser.add_argument("--desktop", default=None)
     args = parser.parse_args()
 
     try:
         user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
     except Exception:
         pass
+
+    if args.desktop:
+        GENERIC_ALL = 0x10000000
+        hdesk = user32.OpenDesktopW(args.desktop, 0, False, GENERIC_ALL)
+        if not hdesk:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not user32.SetThreadDesktop(hdesk):
+            raise ctypes.WinError(ctypes.get_last_error())
+        print(f"THREAD_DESKTOP={args.desktop}", flush=True)
 
     if args.occluder:
         _register("GUIBridgeOccluder", _occluder_proc_ref)

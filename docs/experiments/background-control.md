@@ -360,3 +360,71 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - 首次 run `20261119T102951Z` 的自绘 case 因初始标题无 `clicked=`  token 导致基线解析为 None、效果回读恒 false（`UNCONFIRMED`），且 evidence 的 after 字段在动作前求值；已修复验证逻辑与 evidence 采集（after 字段改为动作后求值）并以 `20261119T103249Z` 为权威。被弃用运行保留原文件，不覆盖、不挑选。
 - provisional `background_message` 通道与逐组合风险定级**尚未纳入冻结契约/能力表**，需 B 线评审与 owner approve 后方可落地；本节仅提供实测依据。
 - 复跑命令：`python -X utf8 src/probe/experiment_background_message.py`。
+
+## 16. 隐藏桌面隔离实测（E8，`experiment_hidden_desktop.py`，run `20261119T110032Z`）
+
+动机：第 15 节证明同桌面按钮点击必抢主机前台。Windows 一个桌面只有一个前台窗口，但**同一窗口站（WinSta0）可有多个桌面，每个桌面有独立输入队列与独立前台**。把靶应用放到一个**隐藏桌面**（`CreateDesktopW`，不 `SwitchDesktop`），其窗口对用户不可见、也**无法成为主机桌面的前台窗口**——理论上可把焦点干扰关进隐藏桌面，主机零干扰。本节实测验证。
+
+### 16.1 关键架构发现：主机线程跨桌面访问被拒
+
+首次 run `20261119T105529Z`（已弃用，保留原文件）由**主机线程**直接操作隐藏窗口：`GetWindowRect` 失败（返回 1×1）、`WM_GETTEXT` 读空、UIA `ControlFromHandle` 抛 `COMError(-2147220991, 事件无法调用任何订户)`、`PrintWindow` 返回 false。即主机线程无法跨桌面查询/操作/截图另一桌面的窗口，所有 `verified=false` 是**读不回**而非确证点击无效。
+
+修正架构（权威 run `20261119T110032Z`）：
+- 父进程 `CreateDesktopW("GBProbe_<run_id>", GENERIC_ALL)` 建隐藏桌面；靶应用以新增默认关闭参数 `--desktop NAME`（`OpenDesktopW`+`SetThreadDesktop`，建窗前调用）在该桌面建窗。
+- **执行/验证/截图/UIA 全部跑在一个 `SetThreadDesktop(隐藏)` 的工作线程**（`DesktopWorker`，COM STA 初始化）；主机线程只把 FocusGuard 包在工作线程任务外层，测**主机桌面**前台/光标。主机线程从不 `SwitchDesktop`，用户可见桌面永不被替换。
+
+### 16.2 实测矩阵（每操作 2 试验，标准控件靶应用）
+
+| 操作（隐藏桌面工作线程执行） | 效果达成 | 主机光标位移 | 主机前台切换 | 四态 |
+| --- | --- | --- | --- | --- |
+| `BM_CLICK` 按钮 | 2/2（clicked 0→1） | 0 | 无 | success_no_interference_observed |
+| `WM_SETTEXT` 编辑框 | 2/2 | 0 | 无 | success_no_interference_observed |
+| `BM_CLICK` 复选框 | 2/2 | 0 | 无 | success_no_interference_observed |
+| UIA `InvokePattern` 按钮 | 2/2（clicked 0→1） | 0 | 无 | success_no_interference_observed |
+| **同桌面基线**：可见主机窗口 `BM_CLICK` 按钮 | 1/1 | 0 | **有** | **success_with_interference** |
+
+- 隐藏窗口 2/2 **不出现在主机 `EnumWindows`**（`hidden_not_in_host_enum=true`），证实位于另一桌面、对用户不可见。
+- **截图回读成功**：工作线程 `PrintWindow(PW_RENDERFULLCONTENT)` 返回 true，窗口尺寸正确 420×240，采样 3 种非空白颜色（中心 0xFFFFFF、按钮区/左上灰阶）⇒ 不可见窗口仍可被渲染捕获。
+- 按钮点击后隐藏桌面 `GetForegroundWindow=0`（隐藏桌面未设前台），效果仍达成；主机前台始终为 neutral（`host_focus_before==host_focus_after`）。
+
+### 16.3 核心结论
+
+**同一个按钮点击，同桌面会抢主机前台（基线 success_with_interference），放到隐藏桌面后主机零干扰（success_no_interference_observed），且效果可验证、不可见窗口可 PrintWindow 截图、UIA 与窗口消息均可用。** 隐藏桌面是实测成立的「比 VM 轻」隔离容器：同内核、同窗口站、无需 Hyper-V/虚拟化、主机光标与前台完全不受影响。它**不是新的写执行通道**，而是把既有 UIA/消息操作的风险**关进隔离桌面**的容器；主机侧风险实测 `none`（scope=host_desktop）。
+
+### 16.4 限制（不可外推）
+
+- **只能新开实例**：靶应用必须**启动在**隐藏桌面上；无法把主机已运行的第三方进程窗口搬过去（`SetThreadDesktop` 只影响调用线程此后新建的窗口，不能重定父既有进程）。与 VM 同为「fresh instance」限制。
+- **窗口不可见**：用户看不到该桌面；截图依赖 `PrintWindow`，本轮仅对自建 GDI 标准控件靶应用验证成功。DirectX/硬件加速/分层窗口可能渲染空白，真实应用（Electron/Trae、自绘、微信）在隐藏桌面的 UIA 语义可用性与 PrintWindow 渲染**未验证**，部分软件在隐藏桌面会异常（无前台、渲染问题）。
+- **不给 SendInput 第二光标**：`SendInput` 仍注入**活动桌面**的系统队列；隐藏桌面未提供独立物理光标。本轮输入是消息/UIA 级（非物理）。要让 SendInput confined 到隐藏桌面须 `SwitchDesktop`（使其可见、替换用户桌面），非主机安全，未做。
+- 跨桌面访问必须由 pinned 工作线程/进程完成（16.1）；主机线程直接操作会全失败。
+- 每操作 2 试验、样本小；焦点判定轮询+钩子并集，<2 ms 盲区见第 12 节。
+- provisional 隔离标签 `hidden_desktop`，**未改冻结 Channel 枚举**（`VM_ISOLATED` 已存在，隐藏桌面是其更轻的同内核兄弟）；纳入能力模型与逐组合风险定级需 B 评审 + owner approve。
+- 复跑命令：`python -X utf8 src/probe/experiment_hidden_desktop.py`。
+
+## 17. 隔离路线调研汇总（VM / 透明窗口 / 第二虚拟设备 / 同时焦点 / WSL）
+
+用户追问的几条「不影响主机鼠标键盘」的替代路线，调研结论如下（仅参考公开文档，未实测者明确标注）。
+
+### 17.1 已实测
+
+- **隐藏桌面（E8，第 16 节）**：同内核独立输入队列/前台，主机零干扰，窗口不可见但可消息/UIA 操作 + PrintWindow 截图；只能新开实例。**唯一值得动手且已验证的新路径。**
+
+### 17.2 调研排除/受限（未实测，标注依据）
+
+- **透明窗口点击穿透**（`WS_EX_LAYERED|WS_EX_TRANSPARENT`）：放行**真实**点击到下层窗口，无法注入虚拟点击，与「后台无干扰输入」目标相反。排除。
+- **把运行中进程搬进 VM**：进程绑定当前内核 HWND/句柄/会话，无法活体迁移单进程。Live Migration 迁整台 VM、Disk2vhd 抓整机镜像（P2V），均非单进程迁移。Windows Sandbox = 轻量 `VM_ISOLATED`（独立内核、主机零干扰、临时性），但需 Pro/企业/教育版 + BIOS 虚拟化 + Hyper-V，且只能新开实例、拿不到主机已运行应用状态。
+- **第二套虚拟设备**：虚拟 HID/Interception 注入仍汇进**同一系统输入队列 → 同一个光标**；Raw Input 能分开**读**多设备但不能分开**注入**第二光标；MouseMux 是第三方付费多物理鼠标 hack，不可依赖；Windows 无原生多指针（Linux X11 MPX `xinput create-master` 有）。例外 = 应用自画光标/自有输入管线（游戏/CDP）。不安装驱动（原则 8）。
+- **同时焦点**：一桌面一前台，做不到两个可见窗口同时真焦点；`WS_EX_NOACTIVATE` 拿不到键盘焦点（微软 Q&A + StackOverflow 证实）、改第三方窗口风格侵入、仍可被悬停/Alt-Tab 激活；假焦点 `WM_SETFOCUS` 对打字有效但标准按钮点击自调 `SetForegroundWindow`。
+
+### 17.3 WSL / WSLg 路线结论
+
+- **WSL2 本质是轻量 Hyper-V _utility VM_（Linux 内核）**；WSLg 用内部 Weston（Wayland 合成器）+ XWayland + RDP 后端把 **Linux GUI 应用**的画面流式传到 Windows，由 DWM 合成为原生样式窗口，输入事件经 RDP 通道反向回 WSL。来源：Microsoft Learn《WSL 互操作》、CSDN/头条《利用 WSLg 在 Windows 里运行 Linux GUI 应用》《WSLg 技术原理》。
+- **对本项目（Windows-first）价值有限**：
+  1. WSLg 只跑 **Linux ELF 二进制**，**不能运行/搬入 Windows Win32 应用**（Trae Windows 版、微信、Notepad、Calculator）。要在 WSL 里跑 Windows 程序需 Wine 兼容层，重且不可靠。
+  2. 即便目标有 Linux 原生版（如微信 Linux 版、Electron 类 Trae 若有 Linux 构建），那也是**新开 Linux 实例**，与 VM 同为 fresh-instance 限制，拿不到用户主机上已运行的 Windows 应用状态。
+  3. WSLg 输入经 RDP 通道、确实与主机 Windows 输入队列隔离——但这是 **VM 级隔离的 Linux 客体重述**，归入既有 `VM_ISOLATED` 阶梯即可，不构成新的 Windows 侧通道。
+- **结论**：WSL 不是本项目 Windows 靶应用的有价值新路线；它等价于「Linux 客体的轻量 VM 隔离」，已被 `VM_ISOLATED` 覆盖。仅在「目标应用恰有 Linux 原生版 + 接受新开实例」时作为 Linux 侧隔离演示可选，非主线。
+
+### 17.4 隔离阶梯（综合）
+
+应用自身协议（CDP，最轻最干净，实测 Trae 读/发送 `none`）→ **隐藏桌面（同内核、主机零干扰、窗口不可见、只能新开实例，E8 实测）** → 独立会话/VM/WSL2（最干净最重、独立内核、只能新开实例）。写执行通道本身的风险仍须按 应用×控件×操作×消息 逐组合实测（第 15 节）；隔离容器只把干扰关起来，不改变操作语义可用性。
