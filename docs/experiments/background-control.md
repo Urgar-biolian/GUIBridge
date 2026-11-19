@@ -709,3 +709,15 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **live 验证**：launch 一次（stub 70788、chat 7671748、`reused=false`，用户手机确认**一次**）→ 连跑两次 `--upto locate --session auto` 均 `reused=true`/`relogin=false`/同 pid 同窗/`host_foreground_changed=false`/`stub_kept_alive=true`，**零手机确认**。主机微信树（31388+子）全程完整。
 - **登录页变化（实测）**：第二账户进入页此时按钮为「**登录**」而非早先的免扫码「进入微信」（`enter_found=false`/`login_found=true`，368×484，8 字昵称≠主机乐乐）⇒ 免扫码信任已失效，auto-enter 回退点「登录」后**需用户手机确认一次**。首次 launch 200s 超时即该确认未在窗口内完成（诊断只读观测确认页面状态后才重试，非盲目重试）。
 - **清理 nuance**：`closedesktop_ok=false` 在桩被杀后复现（E15/诊断均 false，E14/E15a 保活态 true）：桩退出即释放桌面引用、桌面对象随之销毁，此时 `CloseDesktop` 句柄返回 false 属 benign；`stub_alive=false`/`survivors=[]` 才是清理判据。保活态不杀桩、不关桌面，无此问题。
+
+## 26. 长时间多次点击压力测试（`experiment_stress_click.py`，benign 自绘隐藏靶）
+
+对隐藏桌面自绘靶（`selfdrawn_app`，无登录、无真实应用）批量 PostMessage `WM_LBUTTONDOWN/UP` 于绘制按钮（client 95,68），逐批读标题 `clicked=N` 核**丢点击**，每批采样**主机前台 + 光标**证零干扰，异常即停（原则 6，不盲目重试）。
+
+| run | 点击数 | 批 | 耗时 | 速率 | 丢失 | 主机前台变 | 光标最大位移 | 桌面关闭 | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `20261119T161300Z` | 2000 | 100×20 | 6.34s | 315.6/s | **0** | false | **0** | true | stress_ok |
+| `20261119T161320Z` | 8000 | 200×40 | 58.46s | 136.9/s | **0** | false | **0** | true | stress_ok |
+
+- **结论**：PostMessage 坐标点击通道在**高频（2000 次/6s）与持续（8000 次/约 1 分钟）**下均**零丢失**、计数单调递增无停滞、主机前台/光标**全程零位移**、桌面句柄正常释放（`closedesktop_ok=true`）。无 SendInput、无 SwitchDesktop。
+- **边界**：benign 自绘靶（自有按钮 + 标题计数），证**通道稳定性**，非微信/Trae 真实应用压测；真实应用写仍逐次授权 + 手动审批。原始 JSON 入 gitignored `var/experiments/<run_id>/`。
