@@ -463,3 +463,37 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - 每应用样本小；焦点判定轮询+钩子并集，<2 ms 盲区见第 12 节。
 - provisional 隔离标签 `hidden_desktop`，**未改冻结 Channel 枚举**；纳入能力表与逐应用风险定级需 B 评审 + owner approve。
 - 复跑命令：`python -X utf8 src/probe/experiment_real_app_hidden.py [charmap] [notepad] [calc] [control] [regedit]`（不带参数测全部；可控测试建议 `charmap control`，regedit 预期 740 失败、calc 预期主机弹窗自动清理、notepad 有会话恢复警告）。
+
+## 19. 微信只读观测（E10，`experiment_wechat_readonly.py`，run `20261119T113920Z` 权威 / `20261119T113418Z` 首跑误匹配）
+
+动机：用户问「微信可以吗？」并授权「试微信吧」（**严格只读、不发送、不点 send、不切模式**）。微信 4.x（`Weixin.exe`，主 pid 31388，已登录、单实例）与第 18 节 benign 系统应用不同：**不能关进隐藏桌面做可控测试**——单实例 + 已登录，`CreateProcess`/再启动只会通知运行中的实例把窗口弹到**主机桌面**（干扰用户），而「干净隔离全新实例」须先杀掉用户登录会话（**不允许**）。故本节**不启动任何东西**，只对**已在运行**的微信做被动只读观测：UIA 语义树**结构**（仅 `ControlTypeName`+`ClassName`+计数，**刻意不采集 Name/文本**以保护聊天/联系人隐私）、`PrintWindow` 截图可行性（**仅像素统计**：distinct colours/空白检测，**不保存/不显示可读图像**）、FocusGuard 包住被动读以确认主机前台/光标未受扰。
+
+### 19.1 窗口结构（关键修正）
+
+微信 4.x 是 **Qt 5.15 外壳 + 自绘渲染面**：
+- 标题为「微信」的顶层 `Qt51514QWindowIcon`（首跑误匹配的 hwnd 133592）其实是**屏外小_helper_窗**（157×25，位于 -15232,-16116），**不是聊天界面**；其 UIA 仅 3 个框架节点（2 PaneControl + 1 TitleBarControl），`PrintWindow` 截到的是 314×50 小窗，**不具代表性**。
+- **真实内容面是子窗 `MMUIRenderSubWindowHW`**（hwnd 199148，1361×834，parent=133592）——微信自绘渲染面。
+- 另有大顶层 `Qt51514WxTrayIconMessageWindowClass`（1536×834）当前 `visible=false`，托盘消息窗 `Qt51514WxTrayIconMessageWindowClass` 不可见。
+
+### 19.2 结果（权威 run `20261119T113920Z`，目标=渲染面）
+
+| 维度 | 实测 | 含义 |
+| --- | --- | --- |
+| 目标窗 | `MMUIRenderSubWindowHW` 1361×834，**off_screen=true**（x=-31991,y=-32000） | 微信此刻**最小化/隐藏到托盘**，渲染面被泊到屏外 |
+| UIA 语义 | available=true，**node_count=0**，has_edit/has_button/has_list 全 false | 渲染面**完全自绘、零 UIA 语义节点**（比小_helper_窗的 3 框架节点更强的负例） |
+| PrintWindow | `capture_ok=true`、window_wh [1361,834]、**distinct_colors=1（空白）** | 最小化时渲染面**未绘制**，截到空白；**截不到可读聊天内容** |
+| 主机干扰 | cursor_displacement=0、unexpected_focus_switch=false、前台仍 Qoder CN | 被动只读**宿主零干扰**，微信未受打扰 |
+
+### 19.3 核心结论
+
+1. **微信无 UIA 语义可操作**：真实内容面 `MMUIRenderSubWindowHW` 完全自绘，UIA 树**零语义节点**（顶层 Qt 外壳仅暴露 Pane/TitleBar 框架节点）。**后台语义读/写不可行**——与既有「微信 4.x UIA 不可用」结论一致，并在真实渲染面上确认。可行路线仍是 **OCR 定位（只读）+ 剪贴板/前台演示**，非后台语义执行。
+2. **隐藏桌面隔离对微信不可行/不安全**：单实例 + 已登录 ⇒ 再启动只弹用户主机窗（干扰），干净隔离须杀用户会话（不允许）。微信**排除**出第 16/18 节隐藏桌面可控测试。
+3. **截图可行性须区分窗口与状态**：首跑 `capture_ok=true` 是对**屏外小_helper_窗**而言，**不能据此断言「完整聊天界面可截图」**。权威重测落在真实渲染面：`PrintWindow` 返回成功但**最小化时渲染面空白（distinct_colors=1）**。要截可见聊天 UI 必须把微信弹到前台（前台干扰 + 打扰用户），**本轮不做**。故「微信完整聊天界面可截图」**未验证**（受最小化状态 + 不打扰约束所限）。
+4. **被动只读宿主零干扰**：不启动、不切前台、不发送、不点击，FocusGuard 实测光标 0、无焦点切换；微信进程（pid 31388）测后仍正常运行，宿主前台仍 Qoder CN。
+
+### 19.4 隐私与限制
+
+- **隐私红线**：UIA 仅采集 `ControlTypeName`+`ClassName`+计数，`name_values_collected=false`，**不记录任何聊天/联系人 Name/文本**；截图**仅像素统计**（distinct colours/空白），`image_saved=false`，**不保存/不显示可读聊天图像**。原始 JSON 入 gitignored `var/experiments/`，**不入库**。
+- **未验证项（诚实明示）**：① 微信**可见**聊天 UI 的 PrintWindow 是否非空白（需弹出微信=干扰，未做）；② 微信在隐藏桌面的渲染/UIA（单实例不可行，未做）；③ OCR 对微信渲染面的定位精度（本轮只读结构观测，未跑 OCR）。
+- 样本=单一时刻、微信最小化态；off_screen/visible 状态随用户操作变化，复跑结果可能不同。
+- 复跑命令：`python -X utf8 src/probe/experiment_wechat_readonly.py`（**只读**，自动定位最大 `MMUIRenderSubWindowHW` 渲染面；微信未运行则 verdict=wechat_not_running）。
