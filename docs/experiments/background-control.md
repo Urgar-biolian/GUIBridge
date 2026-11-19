@@ -521,7 +521,7 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 
 ## 20. 微信前台 OCR+剪贴板发信演示（E11，`experiment_wechat_send.py`，权威 send run `20261119T120734Z` / navigate `20261119T120511Z` / stage `20261119T120541Z` / recon `20261119T115851Z` / 首跑 navigate `20261119T120047Z` 选错行弃用）
 
-动机：用户要求「**通过隐藏桌面**在微信给文件传输助手发信」。隐藏桌面发微信**实测不可行**（第 19 节三条硬墙：① 单实例+已登录 ⇒ `CreateProcess lpDesktop` 只弹主机窗、干净隔离须杀用户会话；② 渲染面自绘 UIA 零语义节点、标准消息无效；③ 隐藏桌面不给 `SendInput` 第二光标、confined 须 `SwitchDesktop` 非主机安全）。**不假装隐藏桌面成功**；经用户明确改授权「**改用前台 OCR+剪贴板演示发**」，目标=用户自己的**文件传输助手**（benign 自传输）。本节是**一次性前台演示脚本，非 WeChat 适配器能力**（仓库无微信适配器）。
+动机：用户要求「**通过隐藏桌面**在微信给文件传输助手发信」。隐藏桌面发微信**实测不可行**（第 19 节三条硬墙：① 单实例+已登录 ⇒ `CreateProcess lpDesktop` 只弹主机窗、干净隔离须杀用户会话【**此推断已被第 21 节 E12 实测推翻：第二实例可起且主机零干扰，真正卡点是登录层**】；② 渲染面自绘 UIA 零语义节点、标准消息无效；③ 隐藏桌面不给 `SendInput` 第二光标、confined 须 `SwitchDesktop` 非主机安全）。**不假装隐藏桌面成功**；经用户明确改授权「**改用前台 OCR+剪贴板演示发**」，目标=用户自己的**文件传输助手**（benign 自传输）。本节是**一次性前台演示脚本，非 WeChat 适配器能力**（仓库无微信适配器）。
 
 ### 20.1 方法（累积门控 `--upto recon|navigate|stage|send`）
 
@@ -554,3 +554,34 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - 样本=单次发送、固定 benign 测试文本到文件传输助手；OCR 导航对布局/版本敏感（搜索行位置随版本变化），门控失败即停不重试。
 - 原始 JSON gitignored 不入库；复跑须用户授权（`--upto send` 触发真实发送，发送前手动确认文本）。
 - 复跑命令：`python -X utf8 src/probe/experiment_wechat_send.py --upto recon|navigate|stage|send [--text "..."]`（recon/navigate/stage 不发送；send 真实发送须授权+确认）。
+
+## 21. 隐藏桌面微信 CreateProcess 实证诊断（E12，`experiment_wechat_hidden_diag.py`，权威 run `20261119T122446Z` / 轮询 `20261119T122335Z` / 首跑 3s `20261119T121709Z`）
+
+动机：用户问「**隐藏桌面操控卡在哪里了？**」。第 19/20 节曾**推断**硬墙①为「单实例+已登录 ⇒ `CreateProcess lpDesktop` 只弹主机窗、干净隔离须杀用户会话」。本节**实测推翻该推断**，并定位真正卡点。方法：`CreateDesktopW` 隐藏桌面 + `DesktopWorker`（`SetThreadDesktop`）+ `CreateProcessW(STARTUPINFO.lpDesktop)` 起**全新**微信实例（`C:\Program Files\Tencent\Weixin\Weixin.exe`），轮询 1/3/6/9/12s 枚举隐藏桌面窗、按 PID 归属（`weixin.exe`/`wechatappex.exe`）+ 主窗类 `Qt51514QWindowIcon` 识别主 UI，取 `GetWindowRect`/UIA 结构/`PrintWindow` 像素；主机侧 FocusGuard 观测前台/渲染面屏外状态。**只读诊断，不发送、不登录、不碰用户会话**；测后仅 `TerminateProcess` 自起桩进程 + 销毁桌面 + 还前台。
+
+### 21.1 实测结果（权威 run `20261119T122446Z`，桩 pid 74436）
+
+| 维度 | 实测 |
+| --- | --- |
+| 隐藏桌面起第二实例 | **成功**，进程存活（exit_code 259 STILL_ACTIVE），**主机零干扰**：`host_wechat_popped_onscreen=false`、`host_foreground_changed=false`、渲染面始终屏外（主机微信保持最小化） |
+| 隐藏桌面主 UI 窗 | **确有**：`Qt51514QWindowIcon`（标题"微信"2 字），t=1s 仅辅助窗、**t=3s 起出现主窗**并持续到 12s（首跑只等 3s 且误把 `UAC_InputIndicatorOverlayWnd` 当主窗，故曾误判「仅辅助窗」） |
+| 主窗尺寸 | `GetWindowRect` = **368×484**（小窗）——已登录聊天主窗约 1379×843，此尺寸是**登录窗** |
+| 主窗 UIA | node_count **21**，`ButtonControl×6`/`GroupControl×9`/`TextControl×1`，class 含 `mmui::XImage`（二维码图）/`XTextView`/`XButton`/`MMUIRenderSubWindowHW`——**登录窗结构**（QR 面板），非聊天会话列表 |
+| 主窗截图 | `PrintWindow` 非空白，368×484，中心像素 0xFAFAFA 白底、distinct_colors=2（白底+QR）——登录扫码面板 |
+| 清理 | 桩 74436 退出（tasklist 无）、**无 ppid=74436 孤儿**、桌面销毁（`OpenDesktop` lasterr=2）、主机前台还 921150、微信树全归用户 31388 |
+
+### 21.2 真正卡点（修正第 19/20 节硬墙①）
+
+**硬墙①「单实例交接只弹主机窗」推断错误，实测推翻**：微信能在隐藏桌面起第二实例且**主机零干扰**，隐藏桌面**确有可截图、有 UIA 节点的主 UI 窗**。真正卡点是**登录层**：
+
+1. **登录层（第一道、最硬）**：隐藏桌面的全新实例**未登录**，主窗是 **368×484 登录 QR 窗**而非已登录聊天。已登录会话只存在于主机实例（31388），微信**不把主机会话共享给第二实例**。要在隐藏桌面发信须先**登录该实例**（QR 扫码/手机确认=用户交互+凭据），且登录第二实例可能与主机会话冲突/互踢。**无凭据/用户扫码 ⇒ 隐藏桌面拿不到已登录聊天 UI**。
+2. **自绘零语义（即便登录）**：聊天内容面 `MMUIRenderSubWindowHW` 自绘、UIA 零语义节点（第 19 节 E10），只能 OCR 定位。
+3. **输入注入不到隐藏桌面（即便登录）**：`SendInput` 只进**活动桌面**，隐藏桌面无第二光标；confined 注入须 `SwitchDesktop`（切走主机桌面=主机不安全，第 16 节 E8）。`PostMessage`/剪贴板对自绘渲染面不可靠（第 15 节 E7）。
+
+**结论**：隐藏桌面微信操控**卡在登录层**（新实例未登录、只有 QR 登录窗），其后还有自绘零 UIA + 输入注入两道墙。**主机零干扰的隐藏桌面隔离本身成立**（推翻旧推断），但**无法在隐藏桌面获得已登录聊天会话**，故隐藏桌面发微信仍不可行——可行路线仍是第 20 节前台 OCR+剪贴板演示（`PHYSICAL_INPUT`/`success_with_interference`）。**实测优于假设**：本节再次纠正一条未经实测的推断。
+
+### 21.3 边界
+
+- 只读诊断：不发送、不输入凭据、不登录、不碰用户会话/安全桌面；仅起/杀自起桩进程。原始 JSON gitignored 不入库。
+- 登录窗判定基于尺寸 368×484 + UIA `XImage`/`XTextView` 结构 + 白底 QR 像素（未 OCR 读登录窗文本，避免无谓读取）；未尝试登录（需用户凭据，超出授权）。
+- 复跑须授权：`python -X utf8 src/probe/experiment_wechat_hidden_diag.py`（起隐藏桌面微信实例并诊断，测后自清理）。
