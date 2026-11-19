@@ -576,7 +576,7 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 
 1. **登录层（第一道、最硬）**：隐藏桌面的全新实例**未登录**，主窗是 **368×484 登录 QR 窗**而非已登录聊天。已登录会话只存在于主机实例（31388），微信**不把主机会话共享给第二实例**。要在隐藏桌面发信须先**登录该实例**（QR 扫码/手机确认=用户交互+凭据），且登录第二实例可能与主机会话冲突/互踢。**无凭据/用户扫码 ⇒ 隐藏桌面拿不到已登录聊天 UI**。
 2. **自绘零语义（即便登录）**：聊天内容面 `MMUIRenderSubWindowHW` 自绘、UIA 零语义节点（第 19 节 E10），只能 OCR 定位。
-3. **输入注入不到隐藏桌面（即便登录）**：`SendInput` 只进**活动桌面**，隐藏桌面无第二光标；confined 注入须 `SwitchDesktop`（切走主机桌面=主机不安全，第 16 节 E8）。`PostMessage`/剪贴板对自绘渲染面不可靠（第 15 节 E7）。
+3. **输入注入不到隐藏桌面（即便登录）**：`SendInput` 只进**活动桌面**，隐藏桌面无第二光标；confined 注入须 `SwitchDesktop`（切走主机桌面=主机不安全，第 16 节 E8）。`PostMessage`/剪贴板对自绘渲染面不可靠（第 15 节 E7）。【修正指针：此条针对**聊天渲染面** `MMUIRenderSubWindowHW`；第 22 节 E13b 实测**登录 Qt 主窗**自绘按钮可被 `PostMessage` 鼠标坐标激活，二者不可混同。】
 
 **结论**：隐藏桌面微信操控**卡在登录层**（新实例未登录、只有 QR 登录窗），其后还有自绘零 UIA + 输入注入两道墙。**主机零干扰的隐藏桌面隔离本身成立**（推翻旧推断），但**无法在隐藏桌面获得已登录聊天会话**，故隐藏桌面发微信仍不可行——可行路线仍是第 20 节前台 OCR+剪贴板演示（`PHYSICAL_INPUT`/`success_with_interference`）。**实测优于假设**：本节再次纠正一条未经实测的推断。
 
@@ -585,3 +585,87 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - 只读诊断：不发送、不输入凭据、不登录、不碰用户会话/安全桌面；仅起/杀自起桩进程。原始 JSON gitignored 不入库。
 - 登录窗判定基于尺寸 368×484 + UIA `XImage`/`XTextView` 结构 + 白底 QR 像素（未 OCR 读登录窗文本，避免无谓读取）；未尝试登录（需用户凭据，超出授权）。
 - 复跑须授权：`python -X utf8 src/probe/experiment_wechat_hidden_diag.py`（起隐藏桌面微信实例并诊断，测后自清理）。
+
+## 22. 隐藏桌面微信登录层实测（E13/E13b：进入页≠QR、UIA Invoke 空操作、PostMessage 坐标可激活自绘按钮；`experiment_wechat_hidden_login.py` run `20261119T125155Z` / `experiment_wechat_switch_recon.py` 权威 run `20261119T130140Z`、首跑 `20261119T125840Z`）
+
+动机：用户「**继续按虚拟桌面的方向继续做，我有另一个微信账户**」。第二账户登录**不踢主机会话**（单 PC 限制按账户计），故隐藏桌面第二实例登录在授权范围内。本节实测登录层真实形态与可用点击通道。
+
+### 22.1 E13：登录窗是「已存账户进入页」，不是 QR（run `20261119T125155Z`）
+
+隐藏实例登录窗截图（worker `PrintWindow`→PNG，repo 外）实为**已存账户自动登录进入页**：头像 + 昵称「乐乐」+ 绿色「进入微信」+「切换账号」/「仅传输文件」。**用户确认乐乐=主机账户** ⇒ 点「进入微信」会因同账户单 PC 限制**踢掉主机会话**，**禁止**。第二账户须走「切换账号」。该跑被动等待扫码超时（`login_not_completed_timeout`），清理验证：`stub_alive=false`、`survivors=[]`、桌面销毁（`OpenDesktop` lasterr=2）、主机微信树 31388+4 helper 完整、`host_foreground_changed=false`。
+
+### 22.2 E13b：点击机制对照（权威 run `20261119T130140Z`）
+
+对「切换账号」（`ButtonControl` / `mmui::XButton` / `has_invoke=true` / rect[1175,900,1255,930]）依次试两种隐藏桌面安全点击，用截图像素 SHA256 判定界面是否真变：
+
+| 机制 | 返回 | 界面是否变化 | 结论 |
+| --- | --- | --- | --- |
+| UIA `InvokePattern.Invoke()` | ok=true | **否**（hash 不变） | **空操作**：自绘 `mmui::XButton` 暴露 InvokePattern 但 Invoke 不触发点击 handler |
+| `PostMessageW(WM_LBUTTONDOWN/UP)` 客户区坐标 | ok=true | **是**（hash 变、UIA 28→21 节点） | **真正激活**自绘按钮，无需 SendInput、无需 SwitchDesktop |
+
+点击后界面=**二维码「扫码登录」+「仅传输文件」**（PNG 确认）。两跑均 `host_foreground_changed=false`（主机零干扰）、`stub_alive=false`、桌面进程退出后销毁（`closedesktop_ok=false` 为良性：句柄随进程退出释放，复核 `OpenDesktop` lasterr=2）。
+
+### 22.3 结论与修正
+
+1. **登录层形态修正**：第 21 节把 368×484 登录窗一律当「QR 面板」；实测首屏是**已存账户进入页**，须先「切换账号」才到 QR。进入页含主机账户 ⇒ 默认点「进入微信」是**危险动作**（踢主机），适配器/探针必须显式走「切换账号」。
+2. **自绘点击通道修正（重要）**：第 21 节硬墙③「PostMessage 对自绘不可靠」仅对**聊天渲染面** `MMUIRenderSubWindowHW`（E7）成立；**登录 Qt 主窗**的自绘 `mmui::XButton` **可被 PostMessage 鼠标坐标激活**（E13b 实测）。即隐藏桌面存在一条**主机零干扰的点击通道**（PostMessage 坐标），不依赖 SendInput/SwitchDesktop。UIA Invoke 反而不可用（空操作）。
+3. **零干扰写路径候选**：若登录后聊天主窗/发送按钮 likewise 响应 PostMessage 坐标（待登录后实测，第 23 节），则「隐藏桌面 + PostMessage 坐标 + OCR 定位」可能构成主机零干扰的微信写路径；若聊天面仍零语义且不响应消息，则墙②③依旧。**实测优于假设**：本节再纠正两条推断（登录窗形态、PostMessage 可用性）。
+
+### 22.4 边界
+
+- 仅导航点击「切换账号」（非破坏、不登录任何人）；**不点「进入微信」**、不发送、不输入凭据。登录扫码由用户用第二账户手机完成。
+- 登录窗 UI 标签（切换账号/进入微信）为良性导航文本，仅用于定位；聊天/联系人 Name 一律不采集。QR/登录 PNG 存 repo 外、用后删除。
+- 复跑须授权：`python -X utf8 src/probe/experiment_wechat_switch_recon.py`（切换账号侦察，自清理）；`python -X utf8 src/probe/experiment_wechat_hidden_login.py`（切换→QR→等第二账户扫码→登录后只读勘察，自清理）。
+
+### 22.5 登录探针操作教训（run `20261119T130847Z` 超时 / `20261119T131512Z` 崩溃 / `20261119T133929Z` 勘察过早）
+
+- **QR 快照会过期**：探针开头截一次码放主机查看器；微信在隐藏窗内**自刷新过期码**，查看器 PNG 变旧码 ⇒ 扫旧码无效（130847Z 扫码后仍超时）。修正：每 40s 重截+重开查看器（`QR_REFRESHED`）；另把最新码同步复制到桌面供用户扫。
+- **刷新截图须 best-effort**：用户登录瞬间登录窗销毁，此时 `PrintWindow` 该 hwnd 抛 `OSError(22)` 使探针崩溃（131512Z，手机已登录但探针没检测到）。修正：刷新捕获包 try/except，失败跳过不崩。
+- **登录后须等 UIA 加载**：登录检测（窗≥600×400）触发立即勘察时聊天 UIA 仅 ~2 框架节点、tabbar 未出现 ⇒ 点击测试无目标（133929Z）。修正：登录后 sleep 3s + 轮询至 node_count>10 再勘察/点击测试。
+- **主机前台变化须归因**：133929Z `host_foreground_changed=true` 实为**二维码查看器(Photos)故意弹窗**抢前台，非微信干扰；记录 `host_fg_after_login_image` 区分查看器 vs 真干扰。
+- **扫主机账户未见踢主机**：用户误用主机乐乐扫隐藏实例码，自述主机无影响（探针未检测到隐藏登录完成即人工止损）。⇒「同账户单 PC 互踢」本环境**未实测成立**；但「进入微信」仍仅在该昵称≠主机乐乐时才允许点（免扫码自动进入第二账户），主机进入页一律走切换账号→QR。
+- **人工止损流程**：误登时仅 `taskkill /T /F` 自起桩树（验证无孤儿）→ 停探针 → 关残留查看器 → 删 repo 外/桌面登录 PNG → 复核主机树/前台。主机会话不受影响。
+
+## 23. 隐藏桌面免扫码登录成功 + 登录后 UIA 瞬态/自绘结论（E13 续，`experiment_wechat_hidden_login.py`，免扫码 run `20261119T135942Z`/`140053Z`/`140508Z`/`140725Z`/`141058Z`/`141240Z`；富 UIA 唯一 run `20261119T130352Z`）
+
+### 23.1 免扫码自动进入第二账户（已证实，主机零干扰）
+
+- 已存第二账户进入页（昵称≠主机乐乐）→ 角色过滤 `ButtonControl` 匹配「进入微信」否则「登录」→ PostMessage 客户区坐标点击（`client_xy [184,366]`）→ `logged_in=true`。多轮复现。
+- 每轮 `host_foreground_changed=false`（或归因为主机侧用户切换/查看器，非微信抢前台）、`cleanup_stub_alive=false`、`cleanup_survivors=[]`、`closedesktop_ok=true`。主机微信进程树不受影响。
+- 子串陷阱修正：「登录」⊂「当前登录用户某人」(TextControl)，必须 `ControlTypeName=="ButtonControl"` 过滤，否则点昵称标签=空操作（134753Z）。
+
+### 23.2 登录后聊天 UIA 是瞬态的，稳定态自绘零目标
+
+- **唯一富 UIA**：130352Z（QR 扫码登录）聊天主窗 **800×600** 阶段读到 **52 节点 / 22 ButtonControl**（`mmui::MainTabBar`/`XTabBarItem`/`TitleBar` 等 chrome）；但同 run 稍后截图时窗已变 **1118×809** ⇒ 富 UIA 只存在于登录后短暂的默认尺寸阶段。
+- **auto-enter 路径错过该阶段**：直接以保存几何 **1118×809** 创建、立即进自绘态。0.15s 高频轮询 25s（140725Z/141058Z 时间线）恒 **2 节点**（PaneControl×2 = Qt main + `MMUIRenderSubWindowHW`），无 Edit/Document/Button ⇒ 稳定态**零 UIA 写/导航目标**。
+- **恢复手段实测全失败**（141240Z `chat_uia_diag`）：子窗 UIA=0；隐藏桌面内 `SetForegroundWindow` 返回 **false**（跨桌面拿不到前台，符合 Windows 不变量）；`SetWindowPos` 改 800×600 返回 true 但窗**弹回 1118×809**、节点仍 2。
+- **结论**：隐藏桌面「登录 + 登录页导航」零干扰已证实；登录后聊天**稳定态自绘零 UIA** ⇒ 零干扰发信仍不可行；富 UIA 窗口期仅 QR 登录瞬间、不可靠复现，**不能**作为稳定控制通道。导航级 PostMessage 点击仅在富 UIA 阶段有已知 rect 目标。
+
+### 23.3 操作教训（重复手机登录）
+
+- 每轮探针**新 launch 隐藏微信 → 登录 → 查完即杀** ⇒ 每轮都向手机推登录确认，用户被迫重复登录 4 次。这是迭代方式的成本，非用户操作问题。
+- 修正方向：隐藏实例**登录后保活不杀**，后续只做「附着 inspection」反复查同一已登录窗，用户最多再确认一次。尚未实施（待用户确认方向）。
+
+## 24. 隐藏桌面全屏截图 + agent 自纠错截图接口（E14，`hidden_capture.py` + `experiment_hidden_fullscreen.py`，权威 run `20261119T141758Z`）
+
+### 24.1 需求与方法
+
+- 需求：开发阶段不止 OCR，还要截**隐藏（虚拟）桌面整屏**；使用阶段提供整屏截图接口，供 agent 视觉自纠错。
+- 隐藏桌面**非活动输入桌面**、无 DWM 合成屏幕表面 ⇒ 整屏 `GetDC(NULL)+BitBlt` 预计黑屏（实测证实，见下）。可靠兜底=**按窗口矩形把各顶层窗 PrintWindow 拼成整屏 canvas**。两法均在隐藏桌面 worker 线程执行（同桌面），只读。
+- 靶=benign `native_test_app` 双窗（**非微信，免手机登录**），PNG 无隐私可保留供读图验证。
+
+### 24.2 实测结果（run `20261119T141758Z`，虚拟屏 5760×2000 多显示器）
+
+| 方法 | bitblt_return / window_count | nonblack_ratio | distinct_colors | 结论 |
+|---|---|---|---|---|
+| A 整屏 BitBlt | false | 0.0 | 1 | **黑屏，失败**（非活动桌面无合成表面） |
+| B 窗口拼接 | 2 窗 printwindow/blit 全 true | 0.0115 | 33 | **整屏重建成功** |
+
+- 拼接图两窗按真实相对位置完整渲染（标题栏/Run action/输入框/Enable option/状态文字清晰可读）；背景黑（隐藏桌面无壁纸）。本会话直接 Read 该 PNG 看清场景 ⇒ **agent 读图自纠错可行**。
+- 主机零干扰：`host_foreground_changed=false`、`host_cursor_displacement=0`；`closedesktop_ok=true`、靶进程终止无孤儿。单窗参照 `_capture_feasibility` 亦 `capture_ok=true`。
+
+### 24.3 使用阶段接口
+
+- `hidden_capture.screenshot_hidden_desktop(worker, out_path)` → stitch 整屏 PNG + 虚拟屏几何 + 各窗 rect；只读、不改主机前台/光标。`capture_full(worker,out_dir)` 同时返回 A/B 两法供对照。
+- 保留/隐私由**调用方**决定：benign 靶可保留；真实应用（微信等含私聊/联系人）须 hash-then-delete 或 redact 后再持久化。
+- 边界：拼接 z-order 按面积近似（大窗先画）、非真实 z-order；背景黑；**不修改冻结 Channel enum**；尚未接入冻结引擎/MCP 契约（使用阶段集成属契约改动，需双人 approve）。
