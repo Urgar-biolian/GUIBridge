@@ -701,3 +701,11 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - 清理核实：桩进程 `stub_alive=false`、`survivors_after=[]`、主机微信树完整（31388+子进程 33944/34276/34352/34436）。**`closedesktop_ok=false`**（E15 三 run 均 false，E14/E15a 为 true）：桩已杀、无孤儿，进程退出即释放桌面句柄，但 CloseDesktop 调用本身返回 false 的原因待查（疑 worker/OCR 线程仍持桌面引用）；不影响主机安全。
 - **契约影响**：本通道使 wechat×send_message 可声明**零干扰**（risk none，实测），取代 §20 前台 PHYSICAL_INPUT 提案为更优路线；但 Channel enum 与 capabilities.draft.yaml **仍冻结**，新增 hidden_desktop 写通道属契约数据变更，须提案 + **双人 approve**，未单方放行。正式适配器/引擎/MCP 接入留 G1 门 + B 裁决。
 - **完成度**：E15 为**探针实测 verified**（非适配器代码路径）；`packages/adapters/wechat/` 现有适配器走前台 OCR+剪贴板，**尚未**实现本隐藏桌面 PostMessage 通道，不得把探针 verified 冒充适配器 live verified。
+
+### 25.4 保活会话（消除重复手机登录，`hidden_session.py`，commit `3b403d5`；live 验证 run `20261119T151706Z`/`151712Z`）
+
+- **根因**：旧探针每轮 `finally` 都 `taskkill /T /F` 杀隐藏微信桩 ⇒ 第二账户会话刚登录就掉线、下一轮又要手机确认（用户被迫登录 4+ 次）。
+- **新模型**：`hidden_session.ensure_session` 登录一次后**保活不杀**；后续每轮 `OpenDesktopW(桌面名)` + `DesktopWorker` **附着**同一已登录窗（`reused=true`），不重新 launch/登录。桩进程持有桌面引用 ⇒ 发起进程退出后命名桌面仍存活、可按名重开。状态存 `var/experiments/hidden_wechat_session.json`（gitignored，仅桌面名/pid/窗柄/时间，**不存昵称/聊天**）。掉线时对**同一实例**重登（`relogin=true`），不新开。仅显式 `--session stop` / `hidden_session.py stop` 才杀桩+清桌面+清状态。
+- **live 验证**：launch 一次（stub 70788、chat 7671748、`reused=false`，用户手机确认**一次**）→ 连跑两次 `--upto locate --session auto` 均 `reused=true`/`relogin=false`/同 pid 同窗/`host_foreground_changed=false`/`stub_kept_alive=true`，**零手机确认**。主机微信树（31388+子）全程完整。
+- **登录页变化（实测）**：第二账户进入页此时按钮为「**登录**」而非早先的免扫码「进入微信」（`enter_found=false`/`login_found=true`，368×484，8 字昵称≠主机乐乐）⇒ 免扫码信任已失效，auto-enter 回退点「登录」后**需用户手机确认一次**。首次 launch 200s 超时即该确认未在窗口内完成（诊断只读观测确认页面状态后才重试，非盲目重试）。
+- **清理 nuance**：`closedesktop_ok=false` 在桩被杀后复现（E15/诊断均 false，E14/E15a 保活态 true）：桩退出即释放桌面引用、桌面对象随之销毁，此时 `CloseDesktop` 句柄返回 false 属 benign；`stub_alive=false`/`survivors=[]` 才是清理判据。保活态不杀桩、不关桌面，无此问题。
