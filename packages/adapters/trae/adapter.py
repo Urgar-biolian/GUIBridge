@@ -62,28 +62,51 @@ class TraeAdapter(AppAdapter):
         """Read the approval trigger, switch only when it reads auto, and never leave the outcome unsaid.
 
         F9 is why this may not return silently: a mis-clicked mode menu once ran an Agent task under
-        auto-approval. F10 is why the outcome can be `unverified:*`: on the probed build the trigger's
-        menu does not open over CDP, so a click is not always confirmable. An unreadable label is
-        recorded and only fatal for agent mode; an approved switch that fails to produce a readable
-        manual label stays fatal, because a human already granted it.
+        auto-approval. F10 is why the switch is one gated `select` instead of a click: the trigger only
+        opens a popover, so the interaction a human approved has to choose the 手动审批 row inside the
+        same step, and the manual label is the positive evidence that it landed (`approval_mode_manual`
+        in `states.build_verifiers`). An unreadable label is recorded and only fatal for agent mode; an
+        approved switch that fails to produce a readable manual label stays fatal, because a human
+        already granted it.
         """
         state = self._read_approval_state()
         if state == "manual":
             return self._record_approval_read("manual_confirmed", state, clicked=False)
         if state == "auto":
-            result = self._perform("trae.chat.approval_mode", "click", approval_token=approval_token)
-            if not result.verified:
-                self._record_approval_read("unverified:menu_not_confirmed", state, clicked=True)
-                raise AdapterError(result.error_code or "approval_required",
-                                   f"approval mode post-condition not satisfied: "
-                                   f"{result.error_code or 'unknown reason'}")
+            result = self._perform("trae.chat.approval_mode", "select",
+                                   {"value": states.MANUAL_APPROVAL_LABEL}, approval_token=approval_token,
+                                   verification="approval_mode_manual")
             after = self._read_approval_state()
+            if not result.verified:
+                reason = self._approval_switch_reason(result)
+                self._record_approval_read("unverified:menu_not_confirmed", after,
+                                           clicked=reason != "gate_refused", reason=reason,
+                                           error_code=result.error_code)
+                # A gate that refused the interaction reports its own code; a menu that did not produce
+                # a manual label is a human decision, so it comes back as `approval_required`.
+                raise AdapterError(result.error_code if reason == "gate_refused" else "approval_required",
+                                   f"approval mode post-condition not satisfied: {reason}")
             if after != "manual":
-                self._record_approval_read("unverified:manual_label_unreadable", after, clicked=True)
+                self._record_approval_read("unverified:manual_label_unreadable", after, clicked=True,
+                                           reason="label_unreadable")
                 raise AdapterError("approval_required",
                                    f"approval mode still reads {after!r} after an approved switch")
             return self._record_approval_read("manual_confirmed", after, clicked=True)
         return self._record_approval_read(f"unverified:trigger_{state}", state, clicked=False)
+
+    def _approval_switch_reason(self, result) -> str:
+        """Which step of the approved switch is missing, read off the DOM and not off the action.
+
+        `gate_refused` means the interaction never reached the desktop, so the menu has nothing to say
+        about it; a popover left open is one that offered no single 手动审批 row; a closed popover with
+        the label unchanged is `no_change`.
+        """
+        if result.error_code in ("approval_required", "window_not_allowed", "identity_mismatch",
+                                 "locator_missing", "conflict"):
+            return "gate_refused"
+        if self.channel.find(self.window_id, states.APPROVAL_POPOVER) is not None:
+            return "option_not_offered"
+        return "no_change"
 
     def _read_approval_state(self) -> str:
         return states.approval_state(
@@ -92,10 +115,14 @@ class TraeAdapter(AppAdapter):
             bool(self.channel.find(self.window_id, states.APPROVAL_TRIGGER_CLASS)),
         )
 
-    def _record_approval_read(self, outcome: str, state: str, clicked: bool) -> str:
-        self.store.record("approval_mode_read", {"outcome": outcome, "trigger_state": state,
-                                                 "clicked": clicked, "ts": _iso()},
-                          window_id=self.window_id)
+    def _record_approval_read(self, outcome: str, state: str, clicked: bool,
+                              reason: str | None = None, error_code: str | None = None) -> str:
+        payload = {"outcome": outcome, "trigger_state": state, "clicked": clicked, "ts": _iso()}
+        if reason:
+            payload["reason"] = reason
+        if error_code:
+            payload["error_code"] = error_code
+        self.store.record("approval_mode_read", payload, window_id=self.window_id)
         return outcome
 
     # task operations

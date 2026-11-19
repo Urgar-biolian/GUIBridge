@@ -180,6 +180,18 @@ class CDPChannel:
     async def insert_text(self, text: str, session_id: str | None = None) -> None:
         await self._request("Input.insertText", {"text": text}, session_id)
 
+    async def click_at(self, x: float, y: float, session_id: str | None = None) -> None:
+        """A trusted mouse click at page coordinates.
+
+        `Runtime.evaluate` clicks are untrusted, and PROBE_REPORT F10 measured controls (the approval
+        popover) that open only for a real input event — so this belongs to the channel, not to
+        whichever adapter happens to need it.
+        """
+        for kind, extra in (("mouseMoved", {}), ("mousePressed", {"button": "left", "clickCount": 1}),
+                            ("mouseReleased", {"button": "left", "clickCount": 1})):
+            await self._request("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, **extra},
+                                session_id)
+
     async def close(self) -> None:
         if self._reader:
             self._reader.cancel()

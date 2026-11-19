@@ -94,10 +94,14 @@ G1 之后 A 线的感知通道（`packages/perception/cdp.py`、`uia.py`、`ocr.
 ## G1 之后怎么跑
 
 ```bash
-pytest -m live                                    # 5 条 live 用例，当前默认 deselect
-python apps/desktop-agent/main.py --mode live --db ./guibridge.sqlite3 --port 8765
+pytest -m live                                    # 8 条 live 用例，当前默认 deselect，需 GUIBRIDGE_LIVE=1 与真实 Trae
 (cd apps/dashboard && npm install && npm run dev) # http://localhost:5173
 ```
+
+控制平面这条还没通：`python apps/desktop-agent/main.py --mode live` 直接拒绝启动而不是伪造桌面，
+因为 `perception.cdp.CDPChannel` 还没有包成 `adapters.base.Channel`（见 docs/dev-status.md 的 G1 未达成项 7）。
+所以 live 数字目前只能从 A 线的直连入口取：`GUIBridgeEngine` / `CdpTraeAdapter` /
+`examples/agent_live_demo.py`（仅限隔离演示仓库，agent 模式 live 仍禁止）。
 
 纪律：未达标如实记录；原始运行日志与脚本入库（`tests/bench/`）；不以单次成功代表成功率；
 没有真实通道时不产 live 数字；fixture 数字不得写成 live 结论。

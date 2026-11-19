@@ -177,15 +177,16 @@ def handoff(client, package: TaskPackage, store, verifier: Verifier | None = Non
 
 
 def approve_forcing_manual(client, window_id: str | None = None) -> str:
-    """Grant what `force_manual_approval` needs: one single-use token for the auto-approval toggle.
+    """Grant what `force_manual_approval` needs: one single-use token for the approval-mode dropdown.
 
     In a live run a person does this through the Dashboard or `POST /approvals`, because the MCP tool
     surface has no `approval_token` (docs/api.md) and the request is waiting in `pending_approvals()`.
-    Handing the token to `handoff` is the adapter-level equivalent: the click turns auto-approval
-    *off*, which is the safe direction. Without it the task stops in `awaiting_approval`.
+    Handing the token to `handoff` is the adapter-level equivalent: the switch turns auto-approval
+    *off*, which is the safe direction, and it is gated as one `select` because F10 measured that a
+    click on the trigger only opens the popover. Without it the task stops in `awaiting_approval`.
     """
     return client.grant_approval({"window_id": window_id or client.window_id,
-                                  "semantic_ids": ["trae.chat.approval_mode"], "actions": ["click"]})
+                                  "semantic_ids": ["trae.chat.approval_mode"], "actions": ["select"]})
 
 
 def default_client():

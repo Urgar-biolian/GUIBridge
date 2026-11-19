@@ -30,14 +30,19 @@ class Channel(Protocol):
     def screenshot(self, window_id: str) -> str | None:
         """Path to a target-window-only capture; never a full desktop shot (PRD §9)."""
 
-    def click(self, window_id: str, selector: str) -> None: ...
+    def click(self, window_id: str, selector: str) -> None:
+        """One interaction, not one mouse event: Trae's approval trigger only opens a popover (F10)."""
 
     def focus(self, window_id: str, selector: str) -> None: ...
 
     def insert_text(self, window_id: str, text: str) -> None: ...
 
     def select(self, window_id: str, selector: str, value: str) -> None:
-        """Open a menu and pick the leaf entry whose text matches `value` exactly (PROBE_REPORT F5/F9)."""
+        """Open a menu and pick the leaf entry whose text matches `value` exactly (PROBE_REPORT F5/F9).
+
+        Opening the overlay counts as part of choosing, so a dropdown pick stays one gated action even
+        when the app renders the options in a popover outside the control's own subtree (F10).
+        """
 
     def inner_text(self, window_id: str, selector: str) -> str: ...
 

@@ -23,10 +23,13 @@
   一次性审批授予、SSE 续传（`Last-Event-ID`）、无截图时显式声明
 - ✅ Phase 1 实验与契约候选（A 线）：受控 Win32 靶应用的 FocusGuard / Router / 重试策略 / 四态信封桥接
   实测与单测，明细见 [docs/dev-status.md](docs/dev-status.md)
+- ✅ G1 收尾第 1 项 F10（审批弹层）：切手动审批收进**一次被批准的 `select`**（可信点击开弹层 → 按精确文本选中行），
+  直连与控制平面两条路径共用 `states.py` 的选择器与 JS，演示子类里的副本已删；证据仍全是 fixture，
+  控制平面的 live 通道没接（`--mode live` 拒绝启动），详见 [docs/security.md](docs/security.md)
 - ⬜ S5 评测：fixture 模拟 A/B/C 已实测并入库（`tests/bench/`）；**live 对照未实测**，
   阻塞项是 R5（真实 Trae 会话发送需用户授权）与 G2（跨显示器 DPI），见 [docs/benchmark.md](docs/benchmark.md)
 - ⬜ S5 参赛交付：站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）
-- 测试现状：`pytest -m "not live"` → 510 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
+- 测试现状：`pytest -m "not live"` → 528 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
 - 每阶段「做到了什么、没做到什么」一律记在 [docs/dev-status.md](docs/dev-status.md)，不拿界面显示完成当交付
 
 ## 双人分工（本仓库执行约定）
@@ -72,7 +75,7 @@
 
 ```bash
 python -m pip install -e ".[dev]"
-pytest -m "not live"                 # 510 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
+pytest -m "not live"                 # 528 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
 
 # 控制平面（loopback only；--mode simulated 用 fixture 通道，不需要打开 Trae）
 python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --port 8765
@@ -121,8 +124,11 @@ tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 +
 - **Trae 真实改码的 live 端到端仍未执行。** 安全约束只允许 chat 模式 live、禁止 agent 模式 live；
   R5（真实会话发送以量化 `send_task` 的焦点风险）还需要用户本人授权。8 条 `@pytest.mark.live`
   用例默认 deselect，不在 G1 之前伪称通过。
-- **审批弹层在 CDP 下打不开（F10）**：读不到「手动审批」标签时一律回 `approval_required` 并拒绝执行，
-  不猜状态。`awaiting_approval` 至今没有实测 DOM 签名（未验证项 3），当前表现为
+- **审批模式不是点一下就能切的（F10）**：触发器只弹出一个 popover，模式要在其中选中 `手动审批` 那一行才改变，
+  所以切换是一次被批准的 `select`（内含可信点击打开 + 按精确文本选行），代码永不选 `完全访问`；
+  读不到「手动审批」标签时一律回 `approval_required` 并拒绝执行，不猜状态。控制平面这条路径还没有
+  live 通道可跑（`--mode live` 直接退出），实测证据来自 A 线直连适配器与隔离演示。
+  `awaiting_approval` 至今没有实测 DOM 签名（未验证项 3），当前表现为
   `failed` + `approval_required`，语义差记在 [docs/security.md](docs/security.md)。
 - **模拟通道不改文件、不产截图**：离线闭环的 `verified` 证明的是变更范围 + 验收命令退出码 + 写入权限，
   不证明 GUI 真的动了手；`snapshots.image_path` 为 NULL，界面写「无截图」而不是放占位图。

@@ -41,6 +41,21 @@ A 线已落地（均增量，冻结默认路径未改）：
 
 **参考实现**：`examples/agent_live_demo.py::DemoAdapter._force_manual_approval`（仅子类覆写，可以直接收敛进冻结适配器）。守护测试见 `tests/test_agent_live_demo_guards.py`。
 
+**落地结果（B 线，2026-11-19）**：序列已收敛，演示子类那份副本删除，两条路径共用 `states.py` 的常量与三段 JS。
+
+| A 线要点 | 落点 |
+|----|----|
+| 弹层容器 `[class*=permissionModePopover]` + 行 `[class*=permissionModeItem-]`，不是 `.popup-menu` | `states.APPROVAL_POPOVER/APPROVAL_OPTION_ROW`；`cdp_direct._force_manual_approval` 重写，找不到的 `.popup-menu` 版本已消失 |
+| 可信点击开弹层、JS `row.click()` 选中 | `perception.cdp.CDPChannel.click_at()`（公共 API）→ `states.approval_option_click_js()`；固定 sleep 换成带截止时间的轮询 |
+| 用 `textContent` 精确匹配 `手动审批`，不点 wrapper | `approval_option_click_js()` 内 Name→行容器上溯 ≤6 层并跳过 `Name\|Icon\|Desc\|Text`；同名两行按冲突拒（`unverified:ambiguous_option`） |
+| 绝不选「完全访问」 | `states.is_allowed_approval_target()` 只放行 `手动审批`，模拟通道在触达 DOM 之前抛错 |
+| fail-closed：切不到手动就 unverified | `approval_mode_read` 的 outcome 词表不变，新增 `reason`（`gate_refused`/`option_not_offered`/`no_change`/`label_unreadable`） |
+
+B 侧的一处结构调整：控制面里这一步的门禁动作从 `click` 改成 **`select`**（点开弹层算选择的一部分），
+所以审批 token 的 scope 是 `{semantic_ids: ["trae.chat.approval_mode"], actions: ["select"]}`。
+Dashboard 按 pending 请求原样授予 scope，无需改动；`examples/handoff_demo.py::approve_forcing_manual` 已同步。
+`trae.chat.approval_mode` 的链路仍只有触发器两条（`locators.yaml` 冻结），弹层升成 semantic_id 需双人 approve。
+
 ## 2. G1 合并接线清单（B 控制面）
 
 A 线把集成层做成注入式，B 合并时按以下接线把 routed 管线变成**实际默认**（替换冻结 engine/MCP/Dashboard 默认路径，需双人 approve）：

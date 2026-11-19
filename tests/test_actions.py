@@ -1,4 +1,5 @@
 import pytest
+from adapters.trae import states
 
 from semantic.element import GUIElement
 
@@ -90,11 +91,24 @@ def test_high_impact_action_without_a_token_never_reaches_the_channel(plane):
 
 
 def test_high_impact_action_succeeds_once_a_human_grants_it(plane, grant_approval):
+    """The gated step is the switch itself: opening the popover is part of picking from it (F10)."""
+    plane.executor.perform(plane.window_id, APPROVAL, "select", {"value": states.MANUAL_APPROVAL_LABEL})
+    token = grant_approval(plane, APPROVAL, "select")
+    result = plane.executor.perform(plane.window_id, APPROVAL, "select",
+                                    {"value": states.MANUAL_APPROVAL_LABEL}, approval_token=token)
+    assert (result.success, result.verified) == (True, True)
+    assert plane.channel.approval_mode == "manual"
+    assert plane.channel.approval_menu_open is False
+
+
+def test_a_fully_authorized_click_still_does_not_switch_the_mode(plane, grant_approval):
+    """A token buys the interaction a human approved, not a result the desktop never produced."""
     plane.executor.perform(plane.window_id, APPROVAL, "click")
     token = grant_approval(plane, APPROVAL, "click")
     result = plane.executor.perform(plane.window_id, APPROVAL, "click", approval_token=token)
-    assert (result.success, result.verified) == (True, True)
-    assert plane.channel.approval_mode == "manual"
+    assert (result.success, result.verified) == (True, False)
+    assert plane.channel.approval_mode == "auto"
+    assert plane.channel.approval_menu_open is True
 
 
 def test_every_attempt_writes_one_audit_row(plane):

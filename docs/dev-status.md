@@ -295,7 +295,8 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 
 ## G1 集成（2026-11-19，`integrate/g1` = `feat/b-control-plane` × `origin/feat/a-perception`）
 
-命令：`python -m pytest -m "not live" -q` → **510 passed, 3 skipped, 8 deselected**。
+命令：`python -m pytest -m "not live" -q` → **510 passed, 3 skipped, 8 deselected**（下面第 2 条 F10 落地后
+重跑为 **528 passed, 3 skipped, 8 deselected**，增量全在 `tests/test_approval_popover.py` 与那四个改过的测试文件）。
 3 条跳过全是 MCP 网关：本机装的是 mcp 2.3.0，而 `packages/mcp_gateway` 写的是 1.x 的 `FastMCP`
 （2.x 把它改名成 `MCPServer`）；`pyproject.toml` 已声明 `mcp>=1.0,<2`，**没有为了跑绿而降级本机环境**，
 改用模块级 `pytest.skip` 如实标出。`cd apps/dashboard && npm run build`（`vue-tsc` + `vite build`）通过。
@@ -341,9 +342,15 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 
 1. **live 端到端仍未执行**：8 条 live 用例继续 deselect。R5（真实会话发送以量化 `send_task` 的焦点风险）
    要用户本人授权；agent 模式 live 依旧禁止。
-2. **F10 审批弹层修复还没进正式路径**：A 在 `examples/agent_live_demo.py` 的 `DemoAdapter` 里实测出可用序列
-   （可信 `Input.dispatchMouseEvent` 点开审批触发器，再用 JS `row.click()` 选中 `permissionModeItem` 行且
-   文本恰为「手动审批」，绝不选「完全访问」），但它活在演示子类里，**没有进 `adapter.py` 的正式路径**。
+2. ~~**F10 审批弹层修复还没进正式路径**~~ → **已于 2026-11-19 进两条正式路径**：`adapter.py::force_manual_approval`
+   把切换当作**一次被 gate 的 `select`**（通道内含「可信点击打开 popover → 按精确文本选中 `手动审批` 行」，
+   失败时 `approval_mode_read.reason` 说明缺哪一步：`gate_refused` / `option_not_offered` / `no_change`）；
+   `cdp_direct.py::_force_manual_approval` 改用它此前没测过的根因——它一直在找本版本不存在的 `.popup-menu`；
+   共享常量与三段 JS 住在 `packages/adapters/trae/states.py`，`examples/agent_live_demo.py` 里的那份副本已删；
+   模拟通道不再「点一下就变手动」（那是 F10 证伪过的假证据），`CDPChannel.click_at` 成为公共 API。
+   证据仍只到 fixture 级：`tests/test_approval_popover.py`（10 条）+ `tests/test_adapter_flow.py` /
+   `tests/test_actions.py` / `tests/test_states.py` / `tests/test_mcp_tools.py` 的对应改动。
+   **代码永不选 `完全访问`**：`states.is_allowed_approval_target()` 只放行 `手动审批`。
 3. **routed 管线还没接进控制平面**：`RoutedExecutor` / `IntegratedExecutor` / `operation_names` crosswalk /
    `extended_envelope` 目前是「有测试、无调用方」的候选件；`apps/desktop-agent/engine.py` 走的仍是
    `TraeAdapter` + `executor.perform`。接线时第 2 条里的窗口身份前提必须先满足。
@@ -351,3 +358,9 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
    但替换会影响 Dashboard 的 heal 写入路径，属于产品决定，没有单方面动。
 5. **两个 MCP server 并存**是过渡态，不是设计目标；交付面仍是 `packages/mcp` 的冻结 8 工具。
 6. **`docs/api.md` 的扩展信封 / crosswalk 段落**仍标着「候选」，等双人 approve 才算契约生效。
+7. **控制平面还没有 live 通道**：`build_plane("live")` 仍直接退出。F10 的修复因此只在模拟通道上有端到端证据；
+   要让它真的作用于真实 Trae，需要把 `perception.cdp.CDPChannel` 包成 `adapters.base.Channel`
+   （`find/query/scan/inner_text` + 可信 `click` + popover 版 `select` + `window_identity` 走 UIA/托管启动）。
+8. **审批 popover 还没成为契约的一部分**：`locators.yaml` 里 `trae.chat.approval_mode` 只有触发器两条链，
+   弹层与行的选择器暂时硬编码在 `states.py`（由 `tests/test_approval_popover.py` 钉住）。
+   把它们升成 semantic_id 属冻结契约变更，需双人 approve——提案已写进 `docs/handoff-a-to-b.md`。

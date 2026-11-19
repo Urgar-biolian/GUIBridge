@@ -19,6 +19,7 @@ import time
 import uuid
 
 from adapters.base import AppAdapter
+from adapters.trae import states
 from adapters.trae.adapter import AdapterError
 from adapters.trae.states import detect_state, has_approval_prompt, has_running_signal
 from events.store import utcnow
@@ -31,7 +32,6 @@ NEW_SESSION = "[data-testid=ai-chat-create-new-session]"
 CHAT_ROOT = ".ai-chat-v2-ide-root"
 MODE_BTN = ".v2-agent-entry-btn"
 MODE_NAME = ".v2-agent-entry-btn__name"
-APPROVAL_TRIGGER = "[class*=permissionModeTrigger]"
 IDE_TAB = ".icube-mode-tab-item-ide"
 
 MODE_LEAF = {
@@ -194,67 +194,34 @@ class CdpTraeAdapter(AppAdapter):
         return name or picked
 
     async def _click_at(self, ch, x: float, y: float) -> None:
-        for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
-            params = {"type": kind, "x": x, "y": y}
-            if kind != "mouseMoved":
-                params.update(button="left", clickCount=1)
-            await ch._request("Input.dispatchMouseEvent", params)
-            await asyncio.sleep(0.05)
+        await ch.click_at(x, y)
 
     async def _force_manual_approval(self, ch) -> str:
-        """Best-effort switch to manual approval.
+        """Switch the permission mode to manual, or say why it could not be read back.
 
-        Verified 2026-11-17 (F10): the permissionModeTrigger button opens no observable menu via
-        CDP JS click or trusted mouse events on 3.6.13. Agent mode therefore requires a human to
-        have set manual approval beforehand; this method never enables auto approval.
+        This is the sequence PROBE_REPORT F10 left unresolved, measured on 2026-11-18 in run
+        20261118T073742Z: the trigger opens a Vue popover, the popover opens only for a trusted mouse
+        event, and the mode moves when the row named exactly 手动审批 inside it is chosen. Nothing here
+        selects 完全访问, because full access is a human decision, and a switch the label does not
+        confirm comes back as `unverified:*` instead of as success.
         """
-        import json
-        raw = await self._eval(ch, r"""(() => {
-          const trigger = document.querySelector("button[aria-label='自动审批']") ||
-                          document.querySelector('[class*=permissionModeTrigger]');
-          if (!trigger) return 'absent';
-          const label = (trigger.getAttribute('aria-label') || trigger.textContent || '').trim();
-          if (/手动|manual/i.test(label)) return JSON.stringify({status: 'manual', label});
-          const rc = trigger.getBoundingClientRect();
-          return JSON.stringify({status: 'clicked', label,
-                                 x: rc.x + rc.width / 2, y: rc.y + rc.height / 2});
-        })()""")
-        data = json.loads(raw) if isinstance(raw, str) else {"status": raw}
-        if data.get("status") in ("absent", "manual"):
-            return data["status"]
-        if "x" in data:
-            await self._click_at(ch, data["x"], data["y"])
-        else:
-            await self._eval(ch, r"""(() => {
-              const t = document.querySelector("button[aria-label='自动审批']") ||
-                        document.querySelector('[class*=permissionModeTrigger]');
-              if (t) t.click();
-            })()""")
-        for _ in range(8):
-            await asyncio.sleep(0.2)
-            picked = await self._eval(ch, r"""(() => {
-              const pop = document.querySelector('.popup-menu');
-              if (!pop) return 'no_menu';
-              const items = [...pop.querySelectorAll('.popup-menu-item')].filter(el =>
-                el.getBoundingClientRect().height > 0 && /手动|manual/i.test((el.innerText || '').trim()));
-              if (items.length === 1) {
-                const rc = items[0].getBoundingClientRect();
-                return JSON.stringify({status: 'hit', x: rc.x + rc.width / 2, y: rc.y + rc.height / 2});
-              }
-              return items.length === 0 ? 'no_option' : 'ambiguous';
-            })()""")
-            if isinstance(picked, dict) and picked.get("status") == "hit":
-                await self._click_at(ch, picked["x"], picked["y"])
-                state = await self._poll(
-                    ch, lambda s: "手动" in (s.get("approvalLabel") or "") or
-                    "manual" in (s.get("approvalLabel") or "").lower(), timeout=1.5)
-                label = state.get("approvalLabel") or ""
-                return "manual" if ("手动" in label or "manual" in label.lower()) else f"unverified:{label}"
-            if picked == "ambiguous":
-                return "unverified:ambiguous_options"
-            if picked == "no_option":
-                return "unverified:no_option"
-        return "unverified:no_menu"
+        point = await self._eval(ch, states.approval_trigger_point_js()) or {}
+        if point.get("status") == "absent":
+            return "absent"
+        if states.approval_label_is_manual(point.get("label")):
+            return "manual"
+        await self._click_at(ch, point["x"], point["y"])
+        picked = "no_menu"
+        deadline = asyncio.get_running_loop().time() + 2.0
+        while asyncio.get_running_loop().time() < deadline:
+            picked = await self._eval(ch, states.approval_option_click_js())
+            if picked == "clicked":
+                break
+            await asyncio.sleep(0.15)
+        if picked != "clicked":
+            return f"unverified:{picked}"
+        label = await self._eval(ch, states.approval_label_js()) or ""
+        return "manual" if states.approval_label_is_manual(label) else f"unverified:{label or 'no_label'}"
 
     # -- AppAdapter API -------------------------------------------------
     def probe_channels(self) -> dict[str, bool]:

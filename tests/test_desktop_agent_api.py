@@ -13,7 +13,9 @@ import main as agent_main
 from main import build_plane, create_app
 
 TASK = "请只回复 OK 两个字母，不要执行任何其他操作。"
-SCOPE = {"semantic_ids": ["trae.chat.approval_mode"], "actions": ["click"]}
+# The gated step is the approval-mode switch, which F10 measures as a pick from a popover, so the action
+# a human grants is `select`; a token scoped to `click` only buys the click that opens the menu.
+SCOPE = {"semantic_ids": ["trae.chat.approval_mode"], "actions": ["select"]}
 
 
 @pytest.fixture
@@ -70,7 +72,7 @@ def test_a_task_is_blocked_until_a_human_grants_approval(client, plane):
     assert blocked.status_code == 403 and blocked.json()["error_code"] == "approval_required"
 
     pending = client.get("/approvals/pending").json()["requests"]
-    assert len(pending) == 1 and pending[0]["payload"]["scope"]["semantic_ids"] == SCOPE["semantic_ids"]
+    assert len(pending) == 1 and pending[0]["payload"]["scope"] == {**SCOPE, "window_id": plane.window_id}
 
     granted = client.post("/approvals", json={"scope": approval_scope(plane),
                                               "request_id": pending[0]["payload"]["request_id"]})

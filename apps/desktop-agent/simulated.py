@@ -2,17 +2,21 @@
 
 This is NOT a perception channel: it never touches a desktop. It replays the behaviours recorded in
 probe/PROBE_REPORT.md (F5 mode menu leaves, F6 submit -> 「思考中」 -> read-back, F9 auto-approval
-trigger) against a fixture DOM so the adapter, MCP surface and Dashboard can be exercised while the
-S1 CDP channel is still being built. `ControlPlane` swaps it for `perception.cdp` + `semantic.resolver`
-at G1 without any change to the adapter or tool layer.
+trigger, F10 approval popover) against a fixture DOM so the adapter, MCP surface and Dashboard can be
+exercised while the live CDP channel is still missing. `ControlPlane` swaps it for
+`perception.cdp` + `semantic.resolver` without any change to the adapter or tool layer.
 """
 
 import json
 from pathlib import Path
 
-from adapters.trae.states import RUNNING_TEXT
+from adapters.trae import states
+from adapters.trae.states import APPROVAL_OPTION_ROW, APPROVAL_POPOVER, RUNNING_TEXT
 
 MODE_MENU = ".popup-menu"
+# The four rows the approval popover offers on the probed build (docs/handoff-a-to-b.md, run
+# 20261118T073742Z). Kept complete so a test can prove 完全访问 and 自定义 are never picked.
+DEFAULT_APPROVAL_OPTIONS = (states.MANUAL_APPROVAL_LABEL, "自动审批", "完全访问", "自定义")
 
 
 class Conflict(Exception):
@@ -41,7 +45,10 @@ class SimulatedTrae:
         self.composer_text = ""
         self.menu_open = fixture.get("menu_open", False)
         self.session_mode = fixture.get("session_mode", "Agent")
-        self.approval_mode = fixture.get("approval_mode", "manual")
+        self.approval_mode = fixture.get("approval_mode", "auto")
+        # The popover is separate state from the mode: opening it is not switching (F10).
+        self.approval_menu_open = False
+        self.approval_options = list(fixture.get("approval_options") or DEFAULT_APPROVAL_OPTIONS)
         self.ide_mode = fixture.get("ide_mode", False)
         self.actions: list[dict] = []
 
@@ -57,15 +64,24 @@ class SimulatedTrae:
         return {"selector": f"button[aria-label='{label}']", "role": "button", "name": label,
                 "text": label, "disabled": False}
 
+    def _option_row(self, name: str) -> dict:
+        return {"selector": APPROVAL_OPTION_ROW, "role": "menuitem", "name": name, "text": name,
+                "disabled": False}
+
     def _matches(self, selector: str) -> list[dict]:
         if selector == MODE_MENU:
             return [{"selector": MODE_MENU, "role": "menu", "name": "session modes", "text": "",
                      "children": ["Chat", "Ask", "Agent"]}] if self.menu_open else []
-        if selector == "button[aria-label='自动审批']":
+        if selector == APPROVAL_POPOVER:
+            return [{"selector": APPROVAL_POPOVER, "role": "menu", "name": "approval modes", "text": "",
+                     "children": list(self.approval_options)}] if self.approval_menu_open else []
+        if selector == APPROVAL_OPTION_ROW:
+            return [self._option_row(name) for name in self.approval_options] if self.approval_menu_open else []
+        if selector == states.AUTO_APPROVAL_TRIGGER:
             return [self._trigger("自动审批")] if self.approval_mode == "auto" else []
-        if selector == "button[aria-label='手动审批']":
+        if selector == states.MANUAL_APPROVAL_TRIGGER:
             return [self._trigger("手动审批")] if self.approval_mode == "manual" else []
-        if selector == "[class*=permissionModeTrigger]":
+        if selector == states.APPROVAL_TRIGGER_CLASS:
             # One visible trigger carrying the current mode as its label (probe run 20261117T135355Z).
             return [self._trigger("自动审批" if self.approval_mode == "auto" else "手动审批")]
         element = self.elements.get(selector)
@@ -91,6 +107,9 @@ class SimulatedTrae:
         if self.menu_open:
             live.append({"selector": MODE_MENU, "role": "menu", "name": "session modes", "text": ""})
         live.append(self._trigger("自动审批" if self.approval_mode == "auto" else "手动审批"))
+        if self.approval_menu_open:
+            live.append({"selector": APPROVAL_POPOVER, "role": "menu", "name": "approval modes", "text": ""})
+            live.extend(self._option_row(name) for name in self.approval_options)
         return live
 
     def screenshot(self, window_id: str) -> str | None:
@@ -117,11 +136,16 @@ class SimulatedTrae:
             self.queue = []
         elif selector == ".chat-input-v2-send-button":
             self._submit()
-        elif selector == "button[aria-label='自动审批']":
-            self.approval_mode = "manual"
+        elif selector in states.APPROVAL_TRIGGERS:
+            # F10: the click opens the popover and changes no mode. Treating it as a toggle is what
+            # made the pre-merge simulation report a switch that a real Trae never performed.
+            self.approval_menu_open = not self.approval_menu_open
 
     def select(self, window_id: str, selector: str, value: str) -> None:
         self._require(selector, "select")
+        if selector in states.APPROVAL_TRIGGERS:
+            self._select_approval_option(selector, value)
+            return
         menu = self._matches(MODE_MENU)
         if not menu:
             raise LookupError(f"no open menu to select {value!r} from")
@@ -129,6 +153,27 @@ class SimulatedTrae:
             raise LookupError(f"menu has no leaf {value!r}")
         self.menu_open = False
         self.session_mode = value
+        self.actions.append({"action": "select", "selector": selector, "value": value})
+
+    def _select_approval_option(self, selector: str, value: str) -> None:
+        """Opening the approval menu and choosing its manual row are one interaction, as in a dropdown.
+
+        Keeping them together is what lets the switch stay a single gated action; the value is not
+        caller-chosen, because 完全访问 is a human decision and never something this lane selects.
+        """
+        if not states.is_allowed_approval_target(value):
+            raise LookupError(f"refusing to select the approval mode {value!r}; only "
+                              f"{states.MANUAL_APPROVAL_LABEL!r} is switchable here")
+        self.approval_menu_open = True
+        self.actions.append({"action": "click", "selector": selector})
+        offered = self._matches(APPROVAL_OPTION_ROW)
+        if states.find_approval_option(offered, value) is None:
+            # The menu stays open: closing it would hide what it offered from the after-snapshot.
+            raise LookupError(f"approval popover offers no single {value!r} row: "
+                              f"{[row['name'] for row in offered]}")
+        self.actions.append({"action": "click", "selector": APPROVAL_OPTION_ROW, "name": value})
+        self.approval_menu_open = False
+        self.approval_mode = "manual"
         self.actions.append({"action": "select", "selector": selector, "value": value})
 
     def inner_text(self, window_id: str, selector: str) -> str:
@@ -148,7 +193,10 @@ class SimulatedTrae:
         return "".join(self.messages) + self.transient
 
     def _require(self, selector: str, verb: str) -> None:
-        if selector not in self.elements and selector not in (MODE_MENU, "button[aria-label='自动审批']"):
+        # The triggers and the menus are state-driven surfaces, not fixture rows, so they are matched
+        # by `_matches` alone; anything else has to be a registered element before it can be touched.
+        dynamic = (MODE_MENU, APPROVAL_POPOVER, APPROVAL_OPTION_ROW) + states.APPROVAL_TRIGGERS
+        if selector not in self.elements and selector not in dynamic:
             raise LookupError(f"cannot {verb} unregistered selector {selector!r}")
         if not self._matches(selector):
             raise LookupError(f"cannot {verb} absent selector {selector!r}")

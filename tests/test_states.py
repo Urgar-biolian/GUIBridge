@@ -93,10 +93,29 @@ def test_mode_menu_open_and_selected_are_opposite_states(fixture_dom):
 def test_approval_mode_manual_predicate(fixture_dom):
     channel, checks = _verifiers(fixture_dom)
     window = channel.window["window_id"]
-    trigger = "button[aria-label='自动审批']"
+    trigger = states.AUTO_APPROVAL_TRIGGER
     assert checks["approval_mode_manual"](window, trigger, {}) is False
     channel.click(window, trigger)
+    # F10: the click only opens the popover, so the manual label may not be reported as switched on.
+    assert checks["approval_mode_manual"](window, trigger, {}) is False
+    assert checks["approval_menu_open"](window, trigger, {}) is True
+    assert checks["approval_option_offered"](window, trigger, {}) is True
+    channel.select(window, trigger, states.MANUAL_APPROVAL_LABEL)
     assert checks["approval_mode_manual"](window, trigger, {}) is True
+    assert checks["approval_menu_open"](window, trigger, {}) is False
+
+
+def test_a_popover_without_the_manual_row_is_evidence_of_its_own(fixture_dom):
+    """`option_offered` is what tells a missing row apart from a menu that never opened."""
+    channel, checks = _verifiers(fixture_dom)
+    window = channel.window["window_id"]
+    trigger = states.AUTO_APPROVAL_TRIGGER
+    channel.approval_options = ["自动审批", "完全访问"]
+    assert checks["approval_menu_open"](window, trigger, {}) is False
+    assert checks["approval_option_offered"](window, trigger, {}) is False
+    channel.approval_menu_open = True
+    assert checks["approval_menu_open"](window, trigger, {}) is True
+    assert checks["approval_option_offered"](window, trigger, {}) is False
 
 
 # A lane pinned the same detectors from the other direction: an observed gate must outrank a reply

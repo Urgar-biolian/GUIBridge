@@ -17,8 +17,12 @@ PROJECT = str(Path(__file__).resolve().parent)
 TASK = "请只回复 OK 两个字母，不要执行任何其他操作。"
 
 
-def approval(plane, semantic_id="trae.chat.approval_mode", action="click"):
-    """The Dashboard half of the round-trip: a human grants a scoped, single-use token."""
+def approval(plane, semantic_id="trae.chat.approval_mode", action="select"):
+    """The Dashboard half of the round-trip: a human grants a scoped, single-use token.
+
+    The gated action is a `select`, not a click: F10 measured that clicking the trigger only opens a
+    popover, so what the human approves is the switch, which ends on a row inside that popover.
+    """
     return plane.grant_approval({"window_id": plane.window_id, "semantic_ids": [semantic_id],
                                  "actions": [action]})
 
@@ -51,8 +55,8 @@ def test_a_granted_token_is_what_lets_the_task_through(plane):
     record = plane.adapter.send_task(PROJECT, TASK, approval_token=approval(plane))
     assert record.state == "submitted"
     assert plane.channel.approval_mode == "manual"
-    assert actions_of(plane) == ["click", "click", "select", "click", "click", "focus", "insert_text",
-                                 "click", "submit"]
+    assert actions_of(plane) == ["click", "click", "select", "click", "click", "select", "click",
+                                 "focus", "insert_text", "click", "submit"]
     assert [t["state"] for t in plane.store.task_transitions(record.task_id)] == ["submitted"]
 
 
@@ -63,17 +67,75 @@ def test_preconditions_are_proved_in_order_from_the_verified_locator_table(plane
     assert sequence[1]["selector"] == ".v2-agent-entry-btn"
     assert sequence[2] == {"action": "select", "selector": ".v2-agent-entry-btn", "value": "Chat"}
     assert sequence[3]["selector"] == "button[aria-label='自动审批']"
-    assert sequence[4]["selector"] == "[data-testid=ai-chat-create-new-session]"
-    assert sequence[5]["selector"] == ".chat-input-v2-input-box-editable"
-    assert sequence[7]["selector"] == ".chat-input-v2-send-button"
+    assert sequence[6]["selector"] == "[data-testid=ai-chat-create-new-session]"
+    assert sequence[7]["selector"] == ".chat-input-v2-input-box-editable"
+    assert sequence[9]["selector"] == ".chat-input-v2-send-button"
+
+
+def test_the_approved_approval_switch_is_one_action_over_the_popover(plane):
+    """F10: the trigger opens a Vue popover, so the switch is a pick from it and not a bare click."""
+    plane.adapter.send_task(PROJECT, TASK, approval_token=approval(plane))
+    trigger = states.AUTO_APPROVAL_TRIGGER
+    assert plane.channel.actions[3:6] == [
+        {"action": "click", "selector": trigger},
+        {"action": "click", "selector": states.APPROVAL_OPTION_ROW, "name": states.MANUAL_APPROVAL_LABEL},
+        {"action": "select", "selector": trigger, "value": states.MANUAL_APPROVAL_LABEL},
+    ]
+    audit = [event for event in plane.store.events(kind="action")
+             if event["semantic_id"] == "trae.chat.approval_mode"]
+    assert [(row["payload"]["action"], row["payload"]["verified"]) for row in audit] == [("select", True)]
+    assert audit[0]["payload"]["args"] == {"value": states.MANUAL_APPROVAL_LABEL}
+
+
+def test_a_click_on_the_trigger_opens_the_popover_without_switching(plane):
+    """The old simulation flipped the mode on a click, which is the false evidence F10 disproved."""
+    plane.channel.click(plane.window_id, states.AUTO_APPROVAL_TRIGGER)
+    assert plane.channel.approval_mode == "auto"
+    assert plane.channel.find(plane.window_id, states.APPROVAL_POPOVER) is not None
+
+
+def test_the_popover_never_offers_full_access_to_this_lane(plane):
+    """完全访问 lets an agent act unattended; no caller may reach it through this adapter."""
+    window = plane.window_id
+    with pytest.raises(LookupError) as exc:
+        plane.channel.select(window, states.AUTO_APPROVAL_TRIGGER, "完全访问")
+    assert "完全访问" in str(exc.value)
+    assert plane.channel.approval_mode == "auto"
+    assert plane.channel.approval_menu_open is False
+
+
+def test_a_popover_without_a_manual_row_says_which_step_is_missing(plane):
+    plane.channel.approval_options = ["自动审批", "完全访问"]
+    with pytest.raises(AdapterError) as exc:
+        plane.adapter.send_task(PROJECT, TASK, approval_token=approval(plane))
+    assert exc.value.code == "approval_required"
+    assert "submit" not in actions_of(plane)
+    read = approval_reads(plane)[0]
+    assert read["outcome"] == "unverified:menu_not_confirmed"
+    assert read["reason"] == "option_not_offered"
+    assert read["clicked"] is True
+    assert plane.store.list_tasks()[0]["state"] == "failed"
+
+
+def test_a_gate_that_refuses_the_switch_reaches_no_desktop(plane):
+    """`reason` separates a missing menu from a refused approval, which the outcome string cannot."""
+    with pytest.raises(AdapterError) as exc:
+        plane.adapter.send_task(PROJECT, TASK)
+    assert exc.value.code == "approval_required"
+    read = approval_reads(plane)[0]
+    assert (read["outcome"], read["reason"], read["clicked"]) == ("unverified:menu_not_confirmed",
+                                                                  "gate_refused", False)
+    assert read["error_code"] == "approval_required"
+    assert plane.channel.approval_menu_open is False
 
 
 def test_mode_is_selected_from_the_menu_leaf_never_the_wrapper(plane):
     plane.adapter.send_task(PROJECT, TASK, mode="agent", approval_token=approval(plane))
     assert plane.channel.session_mode == "Agent"
     assert plane.channel.menu_open is False
-    selects = [entry for entry in plane.channel.actions if entry["action"] == "select"]
-    assert selects == [{"action": "select", "selector": ".v2-agent-entry-btn", "value": "Agent"}]
+    mode_steps = [entry for entry in plane.channel.actions if entry.get("selector") == ".v2-agent-entry-btn"]
+    assert mode_steps == [{"action": "click", "selector": ".v2-agent-entry-btn"},
+                          {"action": "select", "selector": ".v2-agent-entry-btn", "value": "Agent"}]
 
 
 def test_auto_approval_may_be_waived_only_by_an_explicit_opt_in(plane):

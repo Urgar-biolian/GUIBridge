@@ -8,6 +8,7 @@ import asyncio
 import json
 
 import pytest
+from adapters.trae import states
 from mcp.server import TOOL_SPECS, build_server
 
 DOC_NAMES = ["gui.list_windows", "gui.inspect_window", "gui.find_element", "gui.perform_action",
@@ -104,12 +105,23 @@ def test_a_high_impact_action_without_a_token_reaches_never_the_desktop(call, pl
 
 
 def test_the_granted_token_lets_the_same_action_through(call, plane):
+    """The tool surface switches the mode the same way: one gated `select`, verified by its label."""
     token = plane.grant_approval({"window_id": plane.window_id, "semantic_ids": ["trae.chat.approval_mode"],
-                                  "actions": ["click"]})
+                                  "actions": ["select"]})
     outcome = call("gui.perform_action", window_id="trae-main", semantic_id="trae.chat.approval_mode",
-                   action="click", approval_token=token)
+                   action="select", args={"value": states.MANUAL_APPROVAL_LABEL}, approval_token=token)
     assert outcome["verified"] is True
     assert plane.channel.approval_mode == "manual"
+
+
+def test_the_tool_surface_cannot_pick_full_access(call, plane):
+    """A tool caller may not widen what an agent does unattended, token or no token."""
+    token = plane.grant_approval({"window_id": plane.window_id, "semantic_ids": ["trae.chat.approval_mode"],
+                                  "actions": ["select"]})
+    outcome = call("gui.perform_action", window_id="trae-main", semantic_id="trae.chat.approval_mode",
+                   action="select", args={"value": "完全访问"}, approval_token=token)
+    assert outcome["verified"] is False
+    assert plane.channel.approval_mode == "auto"
 
 
 def test_a_token_is_spent_the_first_time_it_is_used(call, plane):

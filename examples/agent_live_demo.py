@@ -6,8 +6,8 @@ Safety gates (refuse rather than risk the real project):
     basename 'Agui' (the real project) is hard-blocked.
   * The CDP page is selected by the demo workspace title; NO fallback to the first
     Trae page (which could be the real project). Missing demo page -> exit 2.
-  * Manual approval must be pre-set by a human in that Trae window; this build cannot
-    force it via CDP. If approval is not manual/absent -> exit 4 (principle 7 human loop).
+  * The approval mode is switched to manual over CDP by the measured F10 sequence, and the run
+    refuses (exit 4) when that switch cannot be read back from the trigger label — principle 7.
   * Task scope is index.html only; an independent Verifier checks git diff scope + tests.
     Reply text is untrusted data and is NEVER executed.
 
@@ -52,12 +52,10 @@ def _is_git_repo(path: Path) -> bool:
 class DemoAdapter(CdpTraeAdapter):
     """Real adapter, but target selection locked to the demo workspace page.
 
-    Also overrides _force_manual_approval with the experimentally-verified sequence
-    (run 20261118T073742Z): the frozen best-effort method searches .popup-menu (absent
-    on this build) and returns unverified:no_menu even when manual is set. Here we read
-    the trigger label directly; if auto, open the popover with a trusted click on the
-    trigger and JS-click the permissionModeItem- row whose name is exactly 手动审批.
-    Never selects 完全访问 (full access). Frozen adapter default path is unchanged.
+    The approval-popover sequence measured in run 20261118T073742Z used to live only here, because the
+    parent searched `.popup-menu` (absent on this build) and returned `unverified:no_menu` even when
+    manual was set. It now belongs to `CdpTraeAdapter._force_manual_approval`, built on the shared
+    selectors in `adapters.trae.states`, so the demo and the formal path cannot drift apart again.
     """
 
     def __init__(self, port: int, store, demo_basename: str):
@@ -74,56 +72,6 @@ class DemoAdapter(CdpTraeAdapter):
         if any(b in match[0].title.lower() for b in REAL_PROJECT_BLOCKLIST):
             raise AdapterError("conflict", "refusing: selected page looks like the real project")
         return match[0]
-
-    async def _approval_label(self, ch) -> str:
-        data = await ch.evaluate_json(r"""(() => {
-          const t = document.querySelector("button[aria-label='手动审批']") ||
-                    document.querySelector("button[aria-label='自动审批']") ||
-                    document.querySelector('[class*=permissionModeTrigger]');
-          return JSON.stringify({label: t ? (t.getAttribute('aria-label') || t.textContent || '').trim() : null});
-        })()""")
-        return (data or {}).get("label") or ""
-
-    async def _force_manual_approval(self, ch) -> str:
-        label = await self._approval_label(ch)
-        if "手动" in label or "manual" in label.lower():
-            return "manual"
-        if not label:
-            return "absent"
-        trig = await ch.evaluate_json(r"""(() => {
-          const t = document.querySelector('[class*=permissionModeTrigger]');
-          if (!t) return JSON.stringify({});
-          const r = t.getBoundingClientRect();
-          return JSON.stringify({x: r.x + r.width / 2, y: r.y + r.height / 2});
-        })()""")
-        if "x" in trig:
-            for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
-                params = {"type": kind, "x": trig["x"], "y": trig["y"]}
-                if kind != "mouseMoved":
-                    params.update(button="left", clickCount=1)
-                await ch._request("Input.dispatchMouseEvent", params)
-                await asyncio.sleep(0.05)
-            await asyncio.sleep(0.5)
-        picked = await ch.evaluate_json(r"""(() => {
-          const pop = document.querySelector('[class*=permissionModePopover]');
-          if (!pop || pop.getBoundingClientRect().height <= 0) return 'no_menu';
-          const name = [...pop.querySelectorAll('[class*=permissionModeItemName]')]
-            .find(e => (e.textContent || '').trim() === '手动审批');
-          if (!name) return 'no_option';
-          let row = name;
-          for (let i = 0; i < 6 && row.parentElement; i++) {
-            row = row.parentElement;
-            const c = String(row.className || '');
-            if (/permissionModeItem-/.test(c) && !/Name|Icon|Desc|Text/.test(c)) break;
-          }
-          row.click();
-          return 'clicked';
-        })()""")
-        if picked != "clicked":
-            return f"unverified:{picked}"
-        await asyncio.sleep(0.8)
-        label = await self._approval_label(ch)
-        return "manual" if ("手动" in label or "manual" in label.lower()) else f"unverified:{label}"
 
 
 def _select_demo_title(basename: str) -> str:
