@@ -2,10 +2,15 @@
 
 Prior "zero-interference send impossible" rested on an UNMEASURED inference that PostMessage
 is unreliable on the self-drawn chat render surface. This probe MEASURES it instead of assuming:
-single keep-alive login of the saved second account -> worker PrintWindow screenshot -> OCR
-locate (send button / 文件传输助手 row) -> PostMessage click the row (OCR title gate) -> click
-composer + inject text via WM_PASTE / WM_CHAR (OCR verify staged) -> PostMessage click send at
-OCR coords (OCR verify bubble). Every step gated; failure stops, no blind retry (principle 6).
+KEEP-ALIVE login of the saved second account (hidden_session.ensure_session) -> worker
+PrintWindow screenshot -> OCR locate (send button / 文件传输助手 row) -> PostMessage click the
+row (OCR title gate) -> click composer + inject text via WM_PASTE / WM_CHAR (OCR verify staged)
+-> PostMessage click send at OCR coords (OCR verify bubble + composer empty). Every step gated;
+failure stops, no blind retry (principle 6).
+
+Keep-alive: the hidden WeChat stub is NOT killed at the end of a run. Login once, then every
+later run ATTACHES to the same logged-in window (no repeated phone confirm). Only an explicit
+`--session stop` (or hidden_session.py stop) cleans up the stub. Host zero-interference.
 
 Target is ONLY 文件传输助手 (benign self-transfer). Privacy: OCR boxes are read in-memory and
 only benign labels/rects/booleans are persisted; private chat/contact text is NEVER stored;
@@ -16,7 +21,6 @@ Raw JSON -> var/experiments/<run_id>/ (gitignored). Frozen Channel enum NOT modi
 from __future__ import annotations
 
 import argparse
-import ctypes
 import datetime
 import json
 import os
@@ -35,15 +39,14 @@ if str(PROBE_DIR) not in sys.path:
     sys.path.insert(0, str(PROBE_DIR))
 
 import experiment_hidden_desktop as e8  # noqa: E402
-import experiment_real_app_hidden as e9  # noqa: E402
 import experiment_wechat_hidden_login as e13  # noqa: E402
 import experiment_wechat_send as e11  # noqa: E402
+import hidden_session  # noqa: E402
 import win32_helpers as wh  # noqa: E402
 from packages.perception.ocr import OCRChannel  # noqa: E402
 
 RUNS = ROOT / "var" / "experiments"
 user32 = e8.user32
-GENERIC_ALL = e8.GENERIC_ALL
 WM_CHAR, WM_PASTE = 0x0102, 0x0302
 SEND, TARGET = "发送", "文件传输助手"
 
@@ -66,61 +69,46 @@ def _screen_rect(ch: int, bounds) -> list:
     return [x1 + ox, y1 + oy, x2 + ox, y2 + oy]
 
 
+class _Stop(Exception):
+    pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--upto", choices=["login", "locate", "stage", "send"], default="send")
     ap.add_argument("--text", default="GB hidden send test")
+    ap.add_argument("--session", choices=["auto", "stop", "status"], default="auto",
+                    help="auto=ensure keep-alive session then measure; stop=kill stub+clear; status=read-only")
+    ap.add_argument("--login-timeout", type=float, default=180.0)
     args = ap.parse_args()
+
+    if args.session == "stop":
+        print(json.dumps(hidden_session.stop_session(), ensure_ascii=False, indent=2))
+        return 0
+    if args.session == "status":
+        print(json.dumps(hidden_session.status_session(), ensure_ascii=False, indent=2))
+        return 0
 
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUNS / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     tmp_dir = tempfile.mkdtemp(prefix="gb_wxsend_")
-    desktop = f"GBSend_{run_id}"
-    hdesk = user32.CreateDesktopW(desktop, None, None, 0, GENERIC_ALL, None)
-    results: dict = {"run_id": run_id, "desktop": desktop, "upto": args.upto,
-                     "createdesktop_ok": bool(hdesk)}
     ocr = OCRChannel()
+    results: dict = {"run_id": run_id, "upto": args.upto, "session_mode": "keep_alive"}
     worker = None
-    launch = {}
+    hdesk = None
+    results["host_fg_before"] = int(user32.GetForegroundWindow() or 0)
     try:
-        if not hdesk:
-            raise ctypes.WinError(ctypes.get_last_error())
-        worker = e8.DesktopWorker(int(hdesk))
-        results["worker_desktop_ok"] = worker.desktop_ok
-        launch = e9._launch_real(e13.WECHAT_EXE, desktop)
-        results["launch"] = launch
-        if not launch.get("ok"):
-            raise RuntimeError(f"launch failed: {launch}")
-        results["host_fg_before"] = int(user32.GetForegroundWindow() or 0)
-
-        # --- login (keep-alive within this run): auto-enter saved second account ---
-        logged_in, ch, auto = False, None, False
-        deadline = time.time() + 180
-        while time.time() < deadline and not logged_in:
-            mains = e13._qt_mains(worker)
-            if mains:
-                biggest = max(mains, key=lambda m: m["area"])
-                if biggest["rect"][2] < 600:
-                    lh = biggest["hwnd"]
-                    texts = worker.run(lambda h=lh: e13._login_texts(h))
-                    nick = next((t for t in texts if t not in e13.LOGIN_KNOWN_LABELS), None)
-                    if nick and nick != e13.HOST_NICK and not auto:
-                        btn = worker.run(lambda h=lh: e13._find_switch_control(h, "进入微信"))
-                        if not btn.get("found"):
-                            btn = worker.run(lambda h=lh: e13._find_switch_control(h, "登录"))
-                        if btn.get("found"):
-                            worker.run(lambda h=lh, r=btn["rect"]: e13._click_switch(h, r))
-                            auto = True
-                            results["auto_enter_nick"] = nick
-                else:
-                    logged_in, ch = True, biggest["hwnd"]
-            time.sleep(0.5)
-        results["logged_in"] = logged_in
-        if not logged_in or args.upto == "login":
-            results["verdict"] = "logged_in" if logged_in else "login_timeout"
+        # --- keep-alive session: reuse alive logged-in stub, else login ONCE ---
+        hdesk, worker, ch, state = hidden_session.ensure_session(args.login_timeout)
+        results["session"] = {"desktop": state["desktop"], "stub_pid": state["stub_pid"],
+                              "reused": state.get("reused", False),
+                              "relogin": state.get("relogin", False), "chat_hwnd": int(ch)}
+        results["logged_in"] = True
+        if args.upto == "login":
+            results["verdict"] = "logged_in"
             raise _Stop()
-        time.sleep(3.0)
+        time.sleep(2.0)
 
         # --- locate ---
         boxes = _ocr_boxes(worker, ch, tmp_dir, ocr)
@@ -150,7 +138,7 @@ def main() -> int:
         else:
             opened["reason"] = "target_not_in_recent_list"
         results["open_target"] = opened
-        if not opened["title_verified"] or args.upto == "locate":
+        if not opened["title_verified"]:
             results["verdict"] = "target_not_opened"
             raise _Stop()
 
@@ -163,7 +151,6 @@ def main() -> int:
         render = next((k["hwnd"] for k in kids if "mmuirender" in k["class"].lower()), ch)
         e11.clipboard_write(args.text)  # clipboard is global; set from host thread
         staged, methods = False, []
-        _, _, w, h = wh.window_rect(ch)
         composer_y = 0.7 * h  # composer occupies the bottom band; message list above it
 
         def staged_now():
@@ -223,28 +210,25 @@ def main() -> int:
     finally:
         results["host_fg_after"] = int(user32.GetForegroundWindow() or 0)
         results["host_foreground_changed"] = results.get("host_fg_after") != results.get("host_fg_before")
-        if launch.get("ok"):
-            results["cleanup_stub"] = e13._cleanup_stub(launch["pid"])
         if worker is not None:
             worker.close()
         if hdesk:
-            results["closedesktop_ok"] = bool(user32.CloseDesktop(hdesk))
+            results["closedesktop_ok"] = bool(user32.CloseDesktop(wintypes.HANDLE(int(hdesk))))
+        # KEEP the stub alive (no _cleanup_stub): the session persists for the next attach.
+        results["stub_kept_alive"] = True
         for f in Path(tmp_dir).glob("*.png"):
             f.unlink(missing_ok=True)
-        os.rmdir(tmp_dir) if not list(Path(tmp_dir).iterdir()) else None
+        if not list(Path(tmp_dir).iterdir()):
+            os.rmdir(tmp_dir)
 
     output = run_dir / "wechat_hidden_send.json"
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = {k: results.get(k) for k in
-               ("run_id", "verdict", "logged_in", "locate", "open_target", "stage", "send",
-                "host_foreground_changed", "closedesktop_ok", "error")}
+               ("run_id", "verdict", "logged_in", "session", "locate", "open_target", "stage",
+                "send", "host_foreground_changed", "stub_kept_alive", "error")}
     summary["output"] = str(output)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
-
-
-class _Stop(Exception):
-    pass
 
 
 if __name__ == "__main__":
