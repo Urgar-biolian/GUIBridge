@@ -243,6 +243,11 @@ APPS = [
     {"name": "charmap", "exe": SYSTEM32 / "charmap.exe", "hints": ("character map", "charmap", "字符映射"), "write": True},
     {"name": "notepad", "exe": SYSTEM32 / "notepad.exe", "hints": ("notepad", "记事本"), "write": True},
     {"name": "calc", "exe": SYSTEM32 / "calc.exe", "hints": ("calculator", "计算器", "calc"), "write": False},
+    # Read-only system apps: UIA tree + PrintWindow capture ONLY, no input/write beyond
+    # launch. regedit is asInvoker (no auto-UAC); never modify any key, never touch the
+    # secure desktop. Control Panel: never click any applet that changes settings.
+    {"name": "control", "exe": SYSTEM32 / "control.exe", "hints": ("control panel", "控制面板"), "write": False},
+    {"name": "regedit", "exe": Path(r"C:\Windows\regedit.exe"), "hints": ("registry", "注册表", "regedit"), "write": False},
 ]
 
 
@@ -252,6 +257,7 @@ def test_app(app: dict, desktop: str, hdesk: int, worker) -> dict:
     launch = _launch_real(app["exe"], desktop)
     record = {"app": app["name"], "exe": str(app["exe"]), "launch": {k: v for k, v in launch.items() if k != "hprocess"}}
     if not launch.get("ok"):
+        record["verdict"] = "launch_failed"
         return record
     matched = None
     try:
@@ -338,6 +344,7 @@ def main() -> int:
         summary["apps"].append({
             "app": rec.get("app"),
             "verdict": rec.get("verdict", rec.get("error")),
+            "launch_error": rec.get("launch", {}).get("error"),
             "matched": rec.get("matched"),
             "matched_pid_is_launched": rec.get("matched_pid_is_launched"),
             "host_new_windows": rec.get("host_new_windows"),
