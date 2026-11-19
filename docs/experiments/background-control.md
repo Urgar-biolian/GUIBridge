@@ -494,6 +494,27 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 ### 19.4 隐私与限制
 
 - **隐私红线**：UIA 仅采集 `ControlTypeName`+`ClassName`+计数，`name_values_collected=false`，**不记录任何聊天/联系人 Name/文本**；截图**仅像素统计**（distinct colours/空白），`image_saved=false`，**不保存/不显示可读聊天图像**。原始 JSON 入 gitignored `var/experiments/`，**不入库**。
-- **未验证项（诚实明示）**：① 微信**可见**聊天 UI 的 PrintWindow 是否非空白（需弹出微信=干扰，未做）；② 微信在隐藏桌面的渲染/UIA（单实例不可行，未做）；③ OCR 对微信渲染面的定位精度（本轮只读结构观测，未跑 OCR）。
+- **未验证项（诚实明示）**：① 微信**可见**聊天 UI 的 PrintWindow 是否非空白 → **已由 §19.5 E10b 验证（非空白）**；② 微信在隐藏桌面的渲染/UIA（单实例不可行，**仍未做**）；③ OCR 对微信渲染面的定位精度 → **已由 §19.5 E10b 验证（可见态定位 39 框）**。
 - 样本=单一时刻、微信最小化态；off_screen/visible 状态随用户操作变化，复跑结果可能不同。
 - 复跑命令：`python -X utf8 src/probe/experiment_wechat_readonly.py`（**只读**，自动定位最大 `MMUIRenderSubWindowHW` 渲染面；微信未运行则 verdict=wechat_not_running）。
+
+### 19.5 可见聊天截图验证（E10b，`experiment_wechat_visible.py`，run `20261119T114750Z`）
+
+动机：闭合 §19.4 未验证项①③——「微信完整聊天界面可截图」此前因最小化空白 + 不打扰约束**未验证**。经用户**明确授权「把微信弹到前台一次」**做只读验证（仍**不发送/不点 send/不切模式/不注入消息**）。方法：`ShowWindow(SW_RESTORE)`+`ensure_foreground` 恢复运行中微信**一次** → 确认 `MMUIRenderSubWindowHW` 渲染面上屏可见 → FocusGuard 包住被动读（`PrintWindow` 像素统计 + mss 抓渲染区到 **repo 外临时目录** + RapidOCR locate-only 推理，**OCR 后立即删除可读 PNG**）→ 测完 `SW_MINIMIZE` 重新最小化、`ensure_foreground` 把前台还给用户原窗（leave-as-found）。
+
+| 维度 | 最小化态（§19.2） | **可见态（E10b）** | 含义 |
+| --- | --- | --- | --- |
+| 渲染面位置 | off_screen @ -31991,-32000 | **on_screen @ 103,137，1361×834，visible=true** | 恢复成功，渲染面上屏 |
+| PrintWindow | capture_ok=true、**distinct_colors=1（空白）** | capture_ok=true、**distinct_colors=2（非空白）** | 可见时自绘聊天内容**可绘制/可截图** |
+| OCR 定位 | 未跑 | **39 个文本框**，locate_only=true（role=text、actions=[]、source=["ocr"]） | 可见态 OCR **定位可行**（仅定位，非写通道） |
+| 被动读干扰 | cursor 0、无切换 | **cursor 0、无焦点切换**（微信已在前台） | 可见后被动读本身**无额外干扰** |
+| 恢复动作干扰 | — | **restore_foreground_switch=true**（前台切到微信） | 恢复=**已授权的前台切换干扰**，诚实记录、非零干扰 |
+
+**核心结论（修正/闭合）**：
+1. **「微信完整聊天界面可截图」现已验证成立——但有前提**：微信**可见**时渲染面 PrintWindow 非空白、OCR 定位到 39 个文本框（locate-only）。§19.2 的「空白」是**最小化态**所致，非微信不可截。
+2. **可见性须以前台切换为代价**：把微信弹到前台本身是一次**前台切换干扰**（`restore_foreground_switch=true`，已授权）。一旦可见，被动读（截图+OCR）本身光标 0、无焦点切换。**不存在「后台既可见又零干扰」的微信截图路径**——要读可见聊天 UI 就得接受前台切换；最小化态则渲染面空白读不到内容。
+3. **OCR 仅定位再确认**：39 框全部 `role=text`、`actions=[]`、`source=["ocr"]`，与原则 3（OCR 永不作写执行通道）一致；微信可行路线仍是 **OCR 定位（只读）+ 剪贴板/前台输入演示**，非后台语义执行（渲染面 UIA 零节点，§19.2）。
+4. **distinct_colors 是稀疏采样**：`_capture_feasibility` 仅采 3 点（中心/按钮区/左上），`distinct_colors=2` 证「非空白」但**非全图丰富度度量**；**39 个 OCR 框**才是「真实可读内容可见」的更强证据。
+
+**隐私与清理核实**：OCR 识别文本**绝不记录/保存/显示**——JSON 仅含 `bounds`/`confidence`/`text_box_count`/`locate_only`，`text_redacted=true`、无任何 text 字段；可读 PNG 抓到 `tempfile.mkdtemp`（repo 外）、OCR 后 `os.remove` 即删（核实临时目录无残留 PNG、repo 无微信可读图）；原始 JSON gitignored 不入库。测后微信**重新最小化**（渲染面回屏外 -31991,-32000）、前台**还给用户原窗**（921150 Qoder CN）、pid 31388 仍正常运行——leave-as-found。
+- 复跑命令：`python -X utf8 src/probe/experiment_wechat_visible.py`（**须用户授权弹前台一次**；只读、自动恢复+最小化+还前台、OCR 脱敏即删图）。
