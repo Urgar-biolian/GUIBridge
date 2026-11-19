@@ -18,7 +18,8 @@
 
 ### gui.perform_action
 输入 `{window_id, semantic_id, action: "click"|"type"|"select"|"invoke", args?: object, approval_token?: string}`。
-输出 `ActionResult {success, verified, error_code?, before_snapshot_id, after_snapshot_id, evidence}`。
+输出 `ActionResult {success, verified, error_code?, before_snapshot_id, after_snapshot_id, evidence, state?, risk?, interference_observed?}`。
+R2a 扩展（2026-11-17 负责人批准）：新增 `state` ∈ `success_no_interference_observed|success_with_interference|failed|unconfirmed`、`risk` ∈ `none|logical_only|focus_switch|physical_input|unknown`、`interference_observed: bool`；向后兼容保留 `success`/`verified`/`error_code`/`evidence`，`unconfirmed` 与 `failed` 经 `state` 可区分（原则 6 对外保留）。`before/after_snapshot_id` 由 FocusGuard 证据经 store 落库注入（11.4 差异 3）。
 高影响语义 ID（approval_mode/terminal/delete/install/git_*）缺 token → `approval_required`。
 
 ### gui.get_snapshot

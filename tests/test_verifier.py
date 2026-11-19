@@ -6,6 +6,7 @@ runner records the argv it was handed and never executes it, which is how the ne
 pinned rather than asserted in prose.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -172,3 +173,92 @@ def test_verifying_a_path_object_is_allowed(scratch_repo, verifier):
     outcome = verifier.verify(Path(scratch_repo.path), ["src/"], [COMMAND])
     assert outcome["status"] == "verified"
     assert isinstance(outcome["repo_path"], str)
+
+
+# The perception lane and the MCP `verify_task` tool build one verifier per task and then call it
+# with no arguments, and a store-backed verifier is the only writer of the `verified` task state.
+# Both are merged-surface promises, so they are pinned against the same fixtures as the checks
+# above (no node, no real toolchain: the recorder answers `git` for real and the rest as argv).
+
+
+def test_a_configured_verifier_answers_a_bare_call(scratch_repo, recorder):
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    configured = Verifier(scratch_repo.path, ["src/"], [COMMAND], runner=recorder)
+    outcome = configured.verify()
+    assert outcome["status"] == "verified" and outcome["changed_files"] == ["src/app.js"]
+    assert outcome["allow_files"] == ["src/"] and recorder.executed == [COMMAND]
+
+
+def test_the_verdict_carries_one_word_for_a_panel(scratch_repo, recorder):
+    configured = Verifier(scratch_repo.path, ["src/"], [COMMAND], runner=recorder)
+    assert configured.verify()["reason"] == "no_change"
+
+    scratch_repo.write("README.md", "the executor also touched this\n")
+    assert configured.verify()["reason"] == "out_of_scope_change"
+
+    scratch_repo.commit("the out-of-scope edit is history now")
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    recorder.outcomes = [(1, "", "1 failing\n")]
+    assert configured.verify()["reason"] == "tests_failed"
+
+
+def test_an_out_of_scope_change_outranks_a_red_test(scratch_repo, recorder):
+    """A reader fixes the scope violation first, so the single word names that one."""
+    scratch_repo.write("README.md", "out of scope\n")
+    recorder.outcomes = [(1, "", "1 failing\n")]
+    configured = Verifier(scratch_repo.path, ["src/"], [COMMAND], runner=recorder)
+    assert configured.verify()["reason"] == "out_of_scope_change"
+
+
+def test_an_unrunnable_tool_is_a_result_with_a_code(scratch_repo, recorder):
+    """The A-lane convention survives: a command that never started is not a passing run."""
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    recorder.outcomes = [OSError(2, "The system cannot find the path specified")]
+    outcome = Verifier(scratch_repo.path, ["src/"], [COMMAND], runner=recorder).verify()
+    assert outcome["status"] == "failed"
+    assert outcome["tests"][0]["returncode"] is None
+    assert "could not run" in outcome["tests"][0]["error"]
+    assert outcome["test_exit"] == 127
+
+
+def test_a_timed_out_command_fails_instead_of_hanging(scratch_repo):
+    """The real runner, because only a real timeout proves the verifier does not wait forever."""
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    sleeper = [sys.executable, "-c", "import time; time.sleep(30)"]
+    outcome = Verifier(scratch_repo.path, ["src/"], [sleeper], timeout=1).verify()
+    assert outcome["status"] == "failed"
+    assert outcome["tests"][0]["returncode"] == 124
+    assert "timed out" in outcome["tests"][0]["stderr_tail"]
+
+
+def test_a_claim_from_the_panel_never_stands_in_for_a_test(scratch_repo, recorder):
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    outcome = Verifier(scratch_repo.path, ["src/"], [], runner=recorder).verify(
+        claimed_reply="已完成，npm test 全绿")
+    assert outcome["status"] == "failed"
+    assert outcome["claimed_reply_untrusted"] == "已完成，npm test 全绿"
+    assert any(reason.startswith("no_acceptance_tests") for reason in outcome["reasons"])
+    assert recorder.executed == []
+
+
+def test_a_verified_run_writes_the_task_state_as_the_verifier(scratch_repo, recorder, store):
+    task = store.create_task("t-verify", "trae", str(scratch_repo.path), acceptance={"commands": [COMMAND]})
+    scratch_repo.write("src/app.js", "export const value = 2;\n")
+    configured = Verifier(scratch_repo.path, ["src/"], [COMMAND], store=store, task_id=task["task_id"],
+                          runner=recorder)
+    report = configured.verify()
+    assert report["verified"] is True
+    assert store.get_task(task["task_id"])["state"] == "verified"
+    assert store.get_task(task["task_id"])["transitions"][-1]["state"] == "verified"
+    events = store.events(kind="verifier_run")
+    assert events[-1]["payload"]["changed_files"] == ["src/app.js"]
+    assert report["evidence_id"] == events[-1]["event_id"]
+
+
+def test_a_failed_run_leaves_the_task_short_of_verified(scratch_repo, recorder, store):
+    task = store.create_task("t-fail", "trae", str(scratch_repo.path))
+    recorder.outcomes = [(1, "", "AssertionError\n")]
+    configured = Verifier(scratch_repo.path, ["src/"], [COMMAND], store=store, task_id=task["task_id"],
+                          runner=recorder)
+    assert configured.verify()["verified"] is False
+    assert store.get_task(task["task_id"])["state"] == "failed"

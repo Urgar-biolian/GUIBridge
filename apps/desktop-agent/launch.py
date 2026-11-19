@@ -2,16 +2,27 @@
 
 GUIBridge is the only process allowed to inject the debugging port, because the port has no
 authentication; binding is pinned to 127.0.0.1 with `--remote-debugging-address`.
+
+Merged surface. `managed_launch`/`LaunchHandle` are the plane's entry and the only ones that add the
+loopback flag; A lane's exe discovery and `launch_trae` CLI wrapper sit on top of it so a fresh
+launch cannot take the path that omits the address.
 """
 
+import argparse
 import contextlib
 import json
+import os
 import socket
 import subprocess
 import time
 import urllib.request
 
 LOOPBACK = "127.0.0.1"
+DEFAULT_CANDIDATES = [
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Trae\Trae.exe"),
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Trae CN\Trae CN.exe"),
+    os.path.expandvars(r"%PROGRAMFILES%\Trae\Trae.exe"),
+]
 
 
 class LaunchError(Exception):
@@ -62,3 +73,38 @@ def managed_launch(exe: str, args: tuple[str, ...] = (), port: int | None = None
     chosen = port or free_port()
     cmd = [exe, f"--remote-debugging-port={chosen}", f"--remote-debugging-address={LOOPBACK}", *args]
     return LaunchHandle(popen(cmd, env=env), chosen, opener)
+
+
+def find_trae_exe(exe: str | None = None) -> str:
+    if exe:
+        return exe
+    for candidate in DEFAULT_CANDIDATES:
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError("Trae.exe not found; pass --exe explicitly")
+
+
+def launch_trae(project_path: str, exe: str | None = None, port: int | None = None,
+                popen=subprocess.Popen) -> dict:
+    """Open a project in a freshly launched Trae and report the port it is debuggable on."""
+    binary = find_trae_exe(exe)
+    handle = managed_launch(binary, (project_path,), port, popen=popen)
+    return {"pid": handle.proc.pid, "port": handle.port, "exe": binary, "handle": handle}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Launch Trae with a loopback CDP port")
+    parser.add_argument("project_path")
+    parser.add_argument("--exe")
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--wait", action="store_true", help="block until the DevTools endpoint answers")
+    cli = parser.parse_args()
+    result = launch_trae(cli.project_path, cli.exe, cli.port)
+    if cli.wait:
+        result["handle"].wait_for_devtools()
+    del result["handle"]
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

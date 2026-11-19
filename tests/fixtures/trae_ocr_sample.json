@@ -1,0 +1,6 @@
+[
+  {"text": "添加上下文，", "bounds": [232, 790, 330, 812], "confidence": 0.93},
+  {"text": "自动审批", "bounds": [276, 855, 340, 874], "confidence": 0.95},
+  {"text": "deepseek-flash", "bounds": [448, 855, 556, 874], "confidence": 0.97},
+  {"text": "Agent", "bounds": [1200, 8, 1240, 26], "confidence": 0.96}
+]

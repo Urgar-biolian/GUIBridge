@@ -126,5 +126,7 @@ class ControlPlane:
                  "chain": locator.chain, "verification": locator.verification, "healed_at": locator.healed_at}
                 for sid, locator in sorted(self.registry.items())]
 
-    def grant_approval(self, scope: dict, granted_by: str = "user", request_id: str | None = None) -> str:
-        return self.store.grant_approval(scope, granted_by=granted_by, request_id=request_id)
+    def grant_approval(self, scope: dict, granted_by: str = "user", request_id: str | None = None,
+                       ttl_seconds: int = 600) -> str:
+        return self.store.grant_approval(scope, granted_by=granted_by, request_id=request_id,
+                                         ttl_seconds=ttl_seconds)

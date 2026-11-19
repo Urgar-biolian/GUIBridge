@@ -23,7 +23,7 @@
 以下文件为跨人契约，修改需双人评审（Gitee PR 双 approve）：
 
 1. `packages/semantic/element.py`（数据模型）
-2. `packages/mcp/server.py` 的 `TOOL_SPECS` 与 `Engine` Protocol
+2. `packages/mcp_gateway/server.py` 的 `TOOL_SPECS` 与 `Engine` Protocol
 3. `packages/adapters/trae/locators.yaml`（注册表格式）
 4. `packages/events/schema.sql`（存储 schema）
 5. `docs/api.md`（对外接口）

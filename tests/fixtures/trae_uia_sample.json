@@ -1,0 +1,12 @@
+[
+  {"control_type": "DocumentControl", "name": "Agui - TRAE", "automation_id": "RootWebArea",
+   "class_name": "", "bounds": [380, 155, 2180, 1284], "patterns": ["value", "text"]},
+  {"control_type": "GroupControl", "name": "", "automation_id": "ai-agent-chat-history-container",
+   "class_name": "", "bounds": [1170, 205, 2180, 1284], "patterns": []},
+  {"control_type": "ButtonControl", "name": "最小化", "automation_id": "",
+   "class_name": "", "bounds": [2007, 156, 2064, 204], "patterns": ["invoke"]},
+  {"control_type": "ButtonControl", "name": "最大化", "automation_id": "",
+   "class_name": "", "bounds": [2063, 156, 2122, 204], "patterns": ["invoke"]},
+  {"control_type": "ButtonControl", "name": "关闭", "automation_id": "",
+   "class_name": "", "bounds": [2121, 156, 2179, 204], "patterns": ["invoke"]}
+]

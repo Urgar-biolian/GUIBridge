@@ -1,7 +1,7 @@
 # GUIBridge v0.1 产品需求文档（PRD）
 
 版本：v0.1-draft｜日期：2026-11-17｜状态：待评审
-依据：`probe/PROBE_REPORT.md`（2026-11-17 实测）与原始研究方案《GUIBridge × AgentBridge》。
+依据：`src/probe/PROBE_REPORT.md`（2026-11-17 实测）与原始研究方案《GUIBridge × AgentBridge》。
 
 ## 1. 定位
 
@@ -62,7 +62,7 @@ Agui/
 │   ├── events/               # store.py（SQLite 事件与证据）
 │   └── mcp/                  # server.py
 ├── examples/demo-app/        # 演示用 Vue 示例项目（密码显示/隐藏任务）
-├── probe/                    # 第一阶段探针与证据（只读归档）
+├── src/probe/                    # 第一阶段探针与证据（只读归档）
 ├── tests/
 └── docs/                     # PRD / dev-prompts / architecture / benchmark / security
 ```
@@ -160,7 +160,7 @@ class TaskRecord:
 - 审批：高影响动作（审批模式切换、终端、删除、安装、Git 提交/推送）需 approval_token；Agent 模式任务默认手动审批。
 - 提示注入：IDE 聊天内容/README/网页文本一律视为不可信数据，不得改变权限与规则；读回文本进入 MCP 输出时标注 untrusted。
 - CDP：仅 loopback、随机端口、会话结束关闭；不暴露给局域网；文档明示无认证风险与缓解。
-- 隐私：默认仅截目标窗口；日志保留期可配置；probe/ 与证据目录不入公开交付。
+- 隐私：默认仅截目标窗口；日志保留期可配置；src/probe/ 与证据目录不入公开交付。
 - 环境限制：交互式桌面会话依赖；锁屏/UAC/远程桌面断开/多显示器 DPI 均可能失效 → 状态 unknown 而非盲执行（F8 实证）。
 - 工作区隔离：演示与测试一律使用测试仓库或 git worktree。
 

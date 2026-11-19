@@ -1,0 +1,65 @@
+"""Execution channel capability model (Phase 0 draft, pending B-line approval)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Mapping
+
+
+class Channel(str, Enum):
+    OFFICIAL_API = "official_api"
+    CLI = "cli"
+    UIA = "uia"
+    APP_PROTOCOL = "app_protocol"
+    OCR_VISION = "ocr_vision"
+    FOREGROUND_INPUT = "foreground_input"
+    VM_ISOLATED = "vm_isolated"
+
+
+class InterferenceRisk(str, Enum):
+    NONE = "none"
+    LOGICAL_ONLY = "logical_only"
+    FOCUS_SWITCH = "focus_switch"
+    PHYSICAL_INPUT = "physical_input"
+    UNKNOWN = "unknown"
+
+
+class OperationImpact(str, Enum):
+    """Operation-level impact, independent of interference risk (principle 7).
+
+    HIGH = state-changing / non-idempotent / destructive / sends real messages;
+    must require user approval even on a NONE-risk channel. LOW = read-only or
+    safely reversible. Impact is a property of the operation, not the channel.
+    """
+
+    LOW = "low"
+    HIGH = "high"
+
+
+# State-changing operations (principle 3): OCR/vision may locate for these but
+# never execute them. Single source of truth shared by the routing-layer guard
+# (ocr_guard) and the capability-table data-layer integrity guard.
+WRITE_OPERATIONS = frozenset(
+    {"invoke", "set_value", "toggle", "send_message", "send_task"}
+)
+
+
+@dataclass(frozen=True)
+class Capability:
+    """Measured capability for one app x operation. Unknown channels stay absent."""
+
+    app: str
+    operation: str
+    channels: Mapping[Channel, bool] = field(default_factory=dict)
+    risk: Mapping[Channel, InterferenceRisk] = field(default_factory=dict)
+    preconditions: Mapping[Channel, tuple[str, ...]] = field(default_factory=dict)
+    unsupported_reason: str | None = None
+    impact: OperationImpact = OperationImpact.LOW
+    idempotent: bool = True
+
+    def supported(self) -> list[Channel]:
+        return [channel for channel, ok in self.channels.items() if ok]
+
+    def risk_of(self, channel: Channel) -> InterferenceRisk:
+        return self.risk.get(channel, InterferenceRisk.UNKNOWN)

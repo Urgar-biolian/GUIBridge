@@ -9,9 +9,10 @@
 - `execution/*`：动作执行（前后快照+后置验证）、安全门、独立验证器。verified 只由 verifier 授予。
 - `adapters/*`：业务状态机与通道能力探针；YAML 注册表按 app_version 分节。
 - `events/*`：SQLite 审计；所有 MCP 调用与状态迁移留痕。
-- `mcp/server.py`：固定 8 工具；Engine Protocol 注入，工具层不含业务逻辑。
+- `mcp_gateway/server.py`：固定 8 工具；Engine Protocol 注入，工具层不含业务逻辑；同步引擎调用经线程卸载，避免事件循环嵌套。
 - `apps/desktop-agent`：托管启动（loopback 随机调试端口）、审批端点、SSE 事件流。
-- `apps/dashboard`：只读展示 + 审批操作。
+- `apps/dashboard`：Vue3+TS+Vite；任务/迁移时间线、SSE 事件回放、定位器与 heal 补丁审核、一次性审批。
+- `tests/bench`：A/B/C 可复现基准（fixture 视口变换与漂移注入）。
 
 ## 实现现状（截至 S4-b，2026-11-17）
 

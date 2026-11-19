@@ -97,3 +97,36 @@ def test_approval_mode_manual_predicate(fixture_dom):
     assert checks["approval_mode_manual"](window, trigger, {}) is False
     channel.click(window, trigger)
     assert checks["approval_mode_manual"](window, trigger, {}) is True
+
+
+# A lane pinned the same detectors from the other direction: an observed gate must outrank a reply
+# node, and a transcript that mentions a gate must never be read as a completion. Both hold here;
+# the word a hint produces is `unknown` rather than `awaiting_approval`, because PROBE_REPORT
+# 未验证项 3 leaves the gate's DOM signature unmeasured and an unverified marker may not name a state.
+
+@pytest.mark.parametrize("text", ["思考中", "正在生成中…", "运行中"])
+def test_running_text_alone_is_running(text):
+    assert states.detect_state(text, False, False, False) == "running"
+
+
+def test_stop_control_counts_without_any_text():
+    assert states.has_running_signal("", True)
+    assert states.detect_state("", True, False, False) == "running"
+
+
+def test_a_reply_is_only_a_claim_when_the_ui_has_stopped():
+    assert states.detect_state("已为你完成修改", False, True, False) == "claimed_done"
+    assert states.detect_state("已为你完成修改", False, False, False) == "unknown"
+
+
+def test_an_observed_gate_while_idle_is_awaiting_approval():
+    assert states.detect_state("需要审批", False, False, True) == "awaiting_approval"
+    assert states.detect_state("思考中", False, False, True) == "awaiting_approval"
+    assert states.detect_state("已为你完成修改", False, True, True) == "awaiting_approval"
+
+
+@pytest.mark.parametrize("hint", states.APPROVAL_HINTS)
+def test_an_approval_mention_never_becomes_a_completion_claim(hint):
+    """Hard three-state requirement: the worst reading of a gate is a fake `claimed_done`."""
+    assert states.detect_state(hint, False, True, False) != "claimed_done"
+    assert states.detect_state(hint, False, True, False) == "unknown"

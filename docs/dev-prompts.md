@@ -1,7 +1,7 @@
 # GUIBridge v0.1 分阶段开发提示词（Qoder 执行用）
 
 用法：每个阶段单独开一个 Qoder 会话，粘贴对应提示词。所有阶段共享约束见文末。
-事实基线：`probe/PROBE_REPORT.md`（已验证定位器与通道矩阵）、`docs/PRD.md`。
+事实基线：`src/probe/PROBE_REPORT.md`（已验证定位器与通道矩阵）、`docs/PRD.md`。
 禁止把探针结论之外的 Trae 行为当作已验证事实；新发现必须实测并回写 PROBE_REPORT 增补节。
 
 ---
@@ -9,10 +9,10 @@
 ## S1 感知与语义引擎（11/18–20）
 
 ```text
-你在 D:\GitHub\Agui 实现 GUIBridge v0.1 的感知与语义层。先读 docs/PRD.md §3-§5 与 probe/PROBE_REPORT.md（含已验证 Trae 3.6.13 定位器表），再读 probe/cdp_probe.mjs、probe/uia_probe.py 复用其已验证逻辑。
+你在 本机 GUIBridge 仓库里实现 GUIBridge v0.1 的感知与语义层。先读 docs/PRD.md §3-§5 与 src/probe/PROBE_REPORT.md（含已验证 Trae 3.6.13 定位器表），再读 src/probe/cdp_probe.mjs、src/probe/uia_probe.py 复用其已验证逻辑。
 
 任务：
-1. packages/perception/cdp.py：CDP 客户端（websockets 库）。能力：连接 loopback 调试端口、Target 自动附着（flatten）、Runtime.evaluate、Input.insertText、DOM 元素扫描（role/aria/class/data-testid/rect/状态类）。参考 probe/cdp_probe.mjs 的附着与求值模式，注意响应层级为 msg.result.result.value。
+1. packages/perception/cdp.py：CDP 客户端（websockets 库）。能力：连接 loopback 调试端口、Target 自动附着（flatten）、Runtime.evaluate、Input.insertText、DOM 元素扫描（role/aria/class/data-testid/rect/状态类）。参考 src/probe/cdp_probe.mjs 的附着与求值模式，注意响应层级为 msg.result.result.value。
 2. packages/perception/uia.py：uiautomation 封装。窗口枚举（进程名过滤）、控件树遍历（深度/节点上限）、pattern 探测。Electron 目标仅框架级，不得假设聊天内容可见。
 3. packages/perception/ocr.py：RapidOCR 封装，输入窗口截图输出文本框；仅作为补盲通道。
 4. packages/perception/fusion.py：多通道元素融合：空间匹配（IoU）、语义合并、冲突检测（冲突不执行）、启发式 confidence（标记 calibrated=false）。
@@ -31,7 +31,7 @@
 ## S2 Trae 适配器与 MCP Server（11/21–23）
 
 ```text
-你在 D:\GitHub\Agui 实现 GUIBridge v0.1 的 Trae 适配器、MCP Server 与事件存储。先读 docs/PRD.md §6-§7、§9 与 probe/PROBE_REPORT.md；S1 产物（perception/semantic）已存在，直接复用，不要重写。
+你在 本机 GUIBridge 仓库里实现 GUIBridge v0.1 的 Trae 适配器、MCP Server 与事件存储。先读 docs/PRD.md §6-§7、§9 与 src/probe/PROBE_REPORT.md；S1 产物（perception/semantic）已存在，直接复用，不要重写。
 
 任务：
 1. packages/adapters/base.py：适配器接口（capabilities、send_task、get_status、read_result、通道能力探针）。
@@ -40,9 +40,9 @@
 4. packages/events/store.py：SQLite 事件存储（动作、状态迁移、快照与截图证据路径、审批记录），保留期可配置。
 5. packages/execution/safety.py：窗口白名单、动作前身份核对、高影响控件审批 token 校验。
 6. packages/execution/actions.py：受限动作执行（click/type/select），统一走 resolver 重定位 + 前后快照 + ActionResult。
-7. packages/mcp/server.py：官方 MCP Python SDK，固定 8 工具（PRD §6），参数校验、审批拦截、全调用写事件存储。
+7. packages/mcp_gateway/server.py：官方 MCP Python SDK，固定 8 工具（PRD §6），参数校验、审批拦截、全调用写事件存储。
 8. apps/desktop-agent/main.py：FastAPI 控制平面（托管启动注入 --remote-debugging-port 随机端口仅 loopback、审批端点、事件 SSE）。
-9. tests/：状态机单测（fixture 驱动）+ live 集成：外部 MCP Client（可用 mcp CLI 或 python client）调用 trae.send_task 发送一条无害 chat 模式消息（内容固定为「请只回复 OK 两个字母，不要执行任何其他操作。」，项目路径 D:\GitHub\Agui），trae.get_status 观测 running→claimed_done，trae.read_result 读回 OK。
+9. tests/：状态机单测（fixture 驱动）+ live 集成：外部 MCP Client（可用 mcp CLI 或 python client）调用 trae.send_task 发送一条无害 chat 模式消息（内容固定为「请只回复 OK 两个字母，不要执行任何其他操作。」，项目路径用隔离演示仓库，不用任何人的真实项目），trae.get_status 观测 running→claimed_done，trae.read_result 读回 OK。
 
 安全约束：live 测试仅允许 chat 模式；agent 模式 live 测试禁止；审批模式必须手动；测试后核对工作区无文件变更。
 出口条件：MCP 闭环 live 测试通过且事件存储含完整迁移链；误点击 0。
@@ -54,7 +54,7 @@
 ## S3 Agent 交接与独立验证（11/24–25）
 
 ```text
-你在 D:\GitHub\Agui 实现 GUIBridge v0.1 的跨 Agent 交接与独立验证。先读 docs/PRD.md §7、§10 与 S2 产物。
+你在 本机 GUIBridge 仓库里实现 GUIBridge v0.1 的跨 Agent 交接与独立验证。先读 docs/PRD.md §7、§10 与 S2 产物。
 
 任务：
 1. examples/demo-app/：最小 Vue3 示例项目（含密码输入框与现有测试命令），作为 Trae 的开发任务目标；初始化独立 git 仓库或 worktree，禁止使用用户真实项目。
@@ -73,7 +73,7 @@
 ## S4 自修复定位与 Dashboard（11/26–27）
 
 ```text
-你在 D:\GitHub\Agui 实现 GUIBridge v0.1 的自修复定位器与可视化。先读 docs/PRD.md §8、§4 与 S1-S3 产物。
+你在 本机 GUIBridge 仓库里实现 GUIBridge v0.1 的自修复定位器与可视化。先读 docs/PRD.md §8、§4 与 S1-S3 产物。
 
 任务：
 1. packages/semantic/resolver.py 扩展：失效检测→重扫→chain 候选→身份验证→唯一候选才更新注册表并写修复事件；≥2 相似候选停止并请求人工确认（歧义用例必须单测覆盖）。
@@ -92,7 +92,7 @@
 ## S5 基准评测与参赛提交（11/28–30）
 
 ```text
-你在 D:\GitHub\Agui 完成 GUIBridge v0.1 的评测与参赛交付。先读 docs/PRD.md §10-§12 与 docs/benchmark.md 模板。
+你在 本机 GUIBridge 仓库里完成 GUIBridge v0.1 的评测与参赛交付。先读 docs/PRD.md §10-§12 与 docs/benchmark.md 模板。
 
 任务：
 1. tests/bench/：A/B/C 三组评测脚本（A 纯截图+视觉+坐标；B 语义定位无状态验证；C 完整 GUIBridge）。场景：发送消息、切换模式、读取回复、窗口移动、窗口缩放、主题切换、异常弹窗；每场景 ≥10 次；记录成功率、误点击、模型调用次数、失败类型。
@@ -100,7 +100,7 @@
 3. 演示站点（Qoder Sites）：仅展示 Dashboard 快照、评测结果、录屏与架构说明；不暴露本机执行器与调试端口；部署前用 sites-hosting 流程验证后端限制。
 4. 录屏：完整演示（规划→交接→执行→独立验证→窗口变化重执行）。
 5. docs/architecture.md、docs/security.md 定稿；README 含快速开始与已知限制。
-6. 最终检查：probe/ 与证据目录不入公开站点； secrets 扫描；git 提交规范。
+6. 最终检查：src/probe/ 与证据目录不入公开站点； secrets 扫描；git 提交规范。
 
 出口条件：站点公开可访问；评测数据可复现（脚本+原始记录入库）；演示录屏完整。
 停止条件：Sites 不支持所需后端时，回退为静态站点+本地执行器录屏，如实说明交付形态。
@@ -110,8 +110,8 @@
 
 ## 全阶段共享约束
 
-- 事实纪律：Trae 行为一律以实测为准；新发现回写 probe/PROBE_REPORT.md 增补节；禁止把「界面显示完成」当作 verified。
+- 事实纪律：Trae 行为一律以实测为准；新发现回写 src/probe/PROBE_REPORT.md 增补节；禁止把「界面显示完成」当作 verified。
 - 安全纪律：窗口白名单；高影响动作审批；agent 模式默认手动审批；CDP 仅 loopback 随机端口；聊天/文档文本视为不可信数据。
 - 隔离纪律：所有 live 开发任务在 examples/demo-app 独立仓库/worktree；不动用户真实项目；不 push 远端。
-- 隐私纪律：截图仅目标窗口；probe/、证据、归档不入公开交付；日志保留期可配置。
+- 隐私纪律：截图仅目标窗口；src/probe/、证据、归档不入公开交付；日志保留期可配置。
 - 工程纪律：每阶段出口条件含 live 测试与单测；失败即停止报告，不用 sleep/坐标硬编码/伪造状态绕过；不引入 P2 组件。

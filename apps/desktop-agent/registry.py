@@ -7,7 +7,11 @@ control plane and Dashboard are runnable before the two lanes integrate. It is d
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packages"))
+PACKAGES = str(Path(__file__).resolve().parents[2] / "packages")
+if PACKAGES not in sys.path:
+    # Appended rather than inserted: the plane directory holds modules with the same bare names
+    # (`engine`), and this shim must not outrank the package that imports it.
+    sys.path.append(PACKAGES)
 
 import yaml
 from semantic.element import Locator

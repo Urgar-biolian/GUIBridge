@@ -1,0 +1,124 @@
+# FROZEN measured capability table — approved 2026-11-17 (owner sign-off, design §11.5 R1).
+# Filename retains ".draft" for load-path stability; governance status is frozen.
+# Risk values are MEASURED in Phase 1 experiments, not assumed. Channels absent
+# from an entry were not measured and stay unavailable. UNKNOWN risk is never
+# auto-allowed (policy.py); it surfaces a measurement gap rather than guessing.
+# impact (low/high) and idempotent are operation-level metadata: HIGH impact
+# always requires user approval (principle 7) even on a NONE-risk channel;
+# idempotent feeds the retry policy (principle 6). Defaults: low / true.
+status: frozen
+schema_version: 1
+entries:
+  - app: native-test
+    operation: invoke
+    impact: low
+    idempotent: false
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background invoke, cursor 0, foreground switched to target"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start invoke, transient focus switch, external_input false"
+      - "run 20261117T082451Z E3: SendInput click verified, physical_input interference"
+
+  - app: native-test
+    operation: set_value
+    impact: low
+    idempotent: true
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background SetValue initial->bg-value, cursor 0, foreground switch"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start SetValue, transient focus switch"
+      - "run 20261117T082451Z E3: SendInput text verified, cursor displacement 95px"
+
+  - app: native-test
+    operation: toggle
+    impact: low
+    idempotent: false
+    channels:
+      uia: {supported: true, risk: focus_switch}
+      foreground_input: {supported: true, risk: physical_input}
+    evidence:
+      - "run 20261117T082451Z E1b: 3/3 background Toggle off->on, cursor 0, foreground switch"
+      - "run 20261117T090104Z E1c: 3/3 foreground-start Toggle, transient focus switch"
+      - "run 20261117T082451Z E3: SendInput checkbox click verified, cursor displacement 41px"
+
+  - app: trae
+    operation: send_task
+    impact: high
+    idempotent: false
+    channels:
+      app_protocol: {supported: true, risk: none}
+      uia: {supported: false, risk: unknown}
+    notes: >
+      APP_PROTOCOL (loopback CDP) send click NOW FocusGuard-measured interference-free:
+      two clean trials (run 20261118T044436Z cursor 0/no switch/ext false; run
+      20261118T044518Z clean + claimed_done + reply OK + workspace unchanged); a first
+      polluted trial (20261118T044332Z, external input cursor 1104/ext true) was discarded.
+      Measured risk none via APP_PROTOCOL. HIGH impact STILL requires user approval
+      (principle 7) orthogonal to the none risk; non-idempotent (principle 6). UIA exposes
+      no chat composer/send (E5, 111 framework nodes only) and stays unavailable/unknown.
+    evidence:
+      - "src/probe/PROBE_REPORT.md F3/F6/F12; run 20261117T090104Z E6 live Chat OK"
+      - "run 20261117T090104Z E5: Trae UIA tree has no chat composer/send"
+      - "run 20261118T044436Z send-click clean: cursor 0, no focus switch, ext false"
+      - "run 20261118T044518Z send-click clean + claimed_done + reply OK + workspace unchanged"
+      - "run 20261118T044332Z discarded: external-input pollution (cursor 1104, ext true)"
+
+  - app: trae
+    operation: get_task_status
+    impact: low
+    idempotent: true
+    channels:
+      app_protocol: {supported: true, risk: none}
+      uia: {supported: false, risk: unknown}
+    notes: >
+      Read-only CDP Runtime.evaluate wrapped in FocusGuard: 5/5 cursor 0, no foreground
+      switch, no external input (run 20261117T092712Z). Measured interference-free for the
+      read path; does not imply send_task's send click is interference-free.
+    evidence:
+      - "run 20261117T092712Z trae_cdp_focus: clean 5/5, no_interference 5/5, measured_read_risk none"
+
+  - app: trae
+    operation: read_task_result
+    impact: low
+    idempotent: true
+    channels:
+      app_protocol: {supported: true, risk: none}
+      uia: {supported: false, risk: unknown}
+    notes: >
+      Read-only CDP conversation readback wrapped in FocusGuard: 5/5 cursor 0, no foreground
+      switch, no external input (run 20261117T092712Z). Readback text stays untrusted data.
+    evidence:
+      - "run 20261117T092712Z trae_cdp_focus: clean 5/5, no_interference 5/5, measured_read_risk none"
+
+  - app: wechat
+    operation: send_message
+    impact: high
+    idempotent: false
+    channels:
+      uia: {supported: false, risk: unknown}
+    unsupported_reason: >
+      wechat 4.x: visible window only 4 UIA framework nodes (Window/2 Pane/TitleBar),
+      no Edit/Button — run 20261117T090104Z E5 (PID-matched EnumWindows scan).
+    evidence:
+      - "run 20261117T090104Z E5: hwnd 133592 class Qt51514QWindowIcon, node_count 4, has_edit false, has_button false"
+
+  - app: selfdrawn-test
+    operation: invoke
+    impact: low
+    idempotent: false
+    channels:
+      uia: {supported: false, risk: unknown}
+    unsupported_reason: >
+      self-drawn Win32 target (GDI-painted client controls, no child HWND): UIA tree
+      exposes no EditControl and no content-area Button — only 3 non-client caption
+      buttons (minimize/maximize/close) under TitleBar, which are window-frame chrome
+      not app content. Run 20261117T102927Z scan_selfdrawn: node_count 7, has_edit
+      false, content_button_count 0 (native standard-control contrast: has_edit true,
+      content_button_count 1). Background semantic operation on app content is
+      unavailable; OCR/vision is locate-only.
+    evidence:
+      - "run 20261117T102927Z scan_selfdrawn: selfdrawn content_button_count 0, has_edit false; native contrast has_edit true, content_button_count 1"

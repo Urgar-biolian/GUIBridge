@@ -125,22 +125,40 @@ def create_app(plane, store: EventStore) -> FastAPI:
 
     @app.post("/approvals")
     def grant_approval(body: dict):
-        if not body.get("scope"):
+        """Grant either shape: the Dashboard's `{scope: {...}}` or a flat `{semantic_id, action}`.
+
+        A scope that names no window would validate a click in any window, so the plane pins it to
+        its own (docs/security.md); an empty scope is refused before it can be minted.
+        """
+        scope = dict(body.get("scope") or {})
+        for key in ("semantic_ids", "actions", "semantic_id", "action"):
+            if key not in scope and key in body:
+                scope[key] = body[key]
+        if not set(scope) & {"semantic_ids", "actions", "semantic_id", "action"}:
             return _invalid("missing field 'scope'")
-        token = plane.grant_approval(body["scope"], body.get("granted_by", "user"), body.get("request_id"))
-        store.record("approval_issued", {"scope": body["scope"], "request_id": body.get("request_id")},
-                     window_id=body["scope"].get("window_id"))
-        return JSONResponse({"token": token, "scope": body["scope"]})
+        scope.setdefault("window_id", plane.window_id)
+        ttl = int(scope.pop("ttl_seconds", None) or body.get("ttl_seconds") or 600)
+        token = plane.grant_approval(scope, body.get("granted_by", "user"), body.get("request_id"), ttl)
+        store.record("approval_issued", {"scope": scope, "request_id": body.get("request_id")},
+                     window_id=scope.get("window_id"))
+        return JSONResponse({"token": token, "scope": scope})
 
     @app.get("/events")
-    async def events(request: Request, limit: int = 200):
+    async def events(request: Request, limit: int = 200, last_event_id: str | None = None):
+        anchor = last_event_id or request.headers.get("last-event-id")
+        # The published `id:` is an event id, not a row number, so a resuming client — including the
+        # Dashboard's EventSource, which echoes that header back by itself — is looked up before it
+        # can be used as a cursor. An unknown id replays the log rather than dropping events silently.
+        cursor = (store.get_event(anchor) or {}).get("seq", 0) if anchor else 0
+
         async def stream():
-            cursor = 0
+            nonlocal cursor
             while not await request.is_disconnected():
                 for event in store.events(after_seq=cursor, limit=limit):
                     cursor = event["seq"]
-                    yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                    yield f"id: {event['event_id']}\ndata: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 await asyncio.sleep(0.5)
+
         return StreamingResponse(stream(), media_type="text/event-stream")
 
     @app.get("/locators")

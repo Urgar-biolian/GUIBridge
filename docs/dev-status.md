@@ -276,7 +276,7 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 
 ### 未达成的出口条件（S5 的 6 项里，本阶段只做了 5、6）
 
-1. **`tests/bench/` 不存在，评测无数据。** dev-prompts S5 第 1 项按 README 分工属 S5-a（A 线）：
+1. **`tests/bench/` 不存在，评测无数据。**（G1 合并后该目录已在库里，数字是 fixture 口径，见下面「G1 集成」一节。）dev-prompts S5 第 1 项按 README 分工属 S5-a（A 线）：
    A/B/C 三组都要真实窗口，且 `packages/perception/` 未实现；B 线不自建一套统计口径去产出无法复现的数字。
 2. **演示站点未部署（S5 第 3 项）。** 两个原因叠加：现在能展示的只有模拟通道，把它发到公网等于用
    fixture 冒充 Trae 实测；且发布是对外可见动作，需要明确授权。真要发，先过 G1，再按 sites-hosting 流程走，
@@ -290,3 +290,64 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 - `EventStore.prune()` 的接线点（启动时清理 / 显式命令 / 定时任务）——涉及删审计数据，属于策略决定。
 - `awaiting_approval` 的语义统一：等 G1 补上 DOM 签名后改状态机，还是保留 `failed`+`approval_required` 并改 docs/agent.md。
 - 若 S5 交付形态需要原图像素，得给 `docs/api.md` 加读快照的端点（契约冻结清单 #5，需双人评审）。
+
+---
+
+## G1 集成（2026-11-19，`integrate/g1` = `feat/b-control-plane` × `origin/feat/a-perception`）
+
+命令：`python -m pytest -m "not live" -q` → **510 passed, 3 skipped, 8 deselected**。
+3 条跳过全是 MCP 网关：本机装的是 mcp 2.3.0，而 `packages/mcp_gateway` 写的是 1.x 的 `FastMCP`
+（2.x 把它改名成 `MCPServer`）；`pyproject.toml` 已声明 `mcp>=1.0,<2`，**没有为了跑绿而降级本机环境**，
+改用模块级 `pytest.skip` 如实标出。`cd apps/dashboard && npm run build`（`vue-tsc` + `vite build`）通过。
+
+方针执行：**安全语义取 B、调用面补齐 A**。下面每条写「谁活下来、留它做什么、用什么证明」。
+
+### 冲突解决逐条
+
+| 冲突文件 | 处理 | 验证 |
+|---|---|---|
+| `packages/execution/verifier.py` | 双模式：B 的显式 `verify(repo, allow, commands, since_rev)` 与 A 的配置式 `verify()` 并存；`_run` 超时记 124、命令不可运行记 127；判定词优先级显式成表 | `tests/test_verifier.py` 30 例（含 A 形状 8 例） |
+| `packages/adapters/trae/states.py` | B 的结构 + A 的两参调用面；`AWAITING_APPROVAL_MARKERS` **仍为空**——没有实测 DOM 签名就不猜状态 | `tests/test_states.py` 26 例 |
+| `packages/adapters/trae/adapter.py` | 取 B（走执行器、审批读取留痕）；顺带修掉一处真实回归：`claimed_done` 之前必须先确认运行信号已停 | `tests/test_adapter_flow.py` |
+| `packages/engine.py` → `packages/router_engine.py` | A 的 `GUIBridgeEngine` 原样保留、改名让位给控制平面同名模块；agent 模式改判为「必须有已授予的一次性 token」——A 原来的 `consume_scope` 无 token 放行属自授权，**没有搬过来** | `tests/test_engine_routed.py`、`tests/test_evidence_bridge.py` |
+| `packages/mcp/` 与 `packages/mcp_gateway/` | 两个 MCP 入口并存：B 的冻结 8 工具（手写 stdio 帧）是交付面，A 的 FastMCP 网关保留 | `tests/test_mcp.py`、`tests/test_live_mcp.py`（2.x 环境跳过） |
+| `apps/desktop-agent/main.py` | A 的 FastAPI 骨架 + B 的安全语义：`/approvals` 同时接受嵌套与扁平 body 并把 scope 钉在平面自己的窗口上、ttl 生效；`/events` 发布 `id:` 并按事件 id 续传；`--host` 非 loopback 直接退出 | `tests/test_desktop_agent_api.py` 20 例 + `tests/test_api.py` 8 例 |
+| `apps/desktop-agent/launch.py` | B 的 `managed_launch`（永远带 `--remote-debugging-address=127.0.0.1`）是唯一入口，A 的 `find_trae_exe` / `launch_trae` 挂到它上面，新开进程走不到漏掉地址的那条路 | `tests/test_launch.py` |
+| `apps/dashboard/src/App.vue` | 取 B 的四页壳。A 的单文件版把 heal-review 提交成 `{action: "approve"}`，合并后的服务端只认 `{decision: "approved"}`，**保留它等于留一个必然 422 的按钮** | `npm run build` |
+| `examples/handoff_demo.py` / `examples/handoff_mcp_demo.py` | B 的规划侧脚本保留；A 走 MCP 工具面的那版拆成独立脚本与独立测试，两条演示都在库里 | `tests/test_handoff.py`、`tests/test_handoff_mcp_demo.py`（缺 `mcp<2` 或缺 node 时跳过） |
+| `docs/api.md`（契约） | 见 `docs/review-r1-r6.md`：A 新增的扩展信封 / crosswalk 段落保留为「候选」，不当作已生效契约 | 冻结文件未被单方面改写 |
+| `README.md`、`docs/benchmark.md`、`docs/security.md`、`examples/demo-app/README.md` | 重写为合并后实况；A 的 Phase 0/1 明细从 README 移出，原文可查 `git show origin/feat/a-perception:README.md` | 人工对读 |
+| `examples/demo-app/index.html` | 取 B。A 把 `data()` 换成 `initialState()` 后 `password-field.test.mjs` 在基线就变红——验收锚点先失效，`verified` 无从谈起。A 的 `src/password.js` 与它的 3 条单测**保留**（页面不引用，只测纯函数） | `node --test tests/*.test.mjs` 在隔离副本基线 8/8 通过 |
+
+### 合并中改掉的真问题（不是格式化）
+
+1. **`sys.path` 顺序投毒**：`registry.py` 原来 `sys.path.insert(0, packages)`，把 `packages/engine.py` 顶到了
+   控制平面同名模块前面，13 个用 `plane` fixture 的测试拿到的是错的 `ControlPlane`。改为 `append` + A 模块改名。
+2. **`snapshots` 外键 fail-closed**：对没被 enumerate 过的窗口写证据 → `FOREIGN KEY constraint failed`。
+   routed 路径现在显式先查 `store.get_window(...)` 为 None 就报 `SafetyError`；A 的单测补上
+   `register_window(...)`（相当于 `list_windows` 在真实桌面上做的那一步），而不是放宽 schema。
+3. **`running` 与 `claimed_done` 同时成立**：B 的适配器把「用户消息已被回显」当成「有新回复」，接上 A 的矛盾
+   判定规则后所有 running 都变 unknown。现在 `new_assistant_reply` 必须先满足「运行信号已停」。
+4. **SSE 续传用错游标**：发布的 `id:` 是事件 id，旧实现只认纯数字，浏览器按 `Last-Event-ID` 原样回传时
+   永远从头重放。现在先按事件 id 查出 rowid 再续。
+5. **数字校准**：A 的 `docs/benchmark.md` 两处结论与其自己的原始 JSON 不符——A 组误点击写成 21 次（实为 9），
+   C 组受支持场景成功率写成 98.3%（59/60，实为 **96.7%，58/60**）。已按
+   `tests/bench/results/run_20261117T062834+0000.json` 重算并改正，表内其余数字与原始记录逐格一致。
+6. **本机路径清理**：`docs/dev-prompts.md`、`docs/handoff-a-to-b.md`、`docs/architecture/guibridge-design.md`、
+   `tests/test_mcp.py`、`tests/test_agent_live_demo_guards.py`、`tests/test_live_mcp.py` 里的绝对项目路径
+   换成占位符或环境变量名；`grep -rn "GitHub" --include=*.py --include=*.md` 现为 0。
+
+### G1 之后仍然没做到的（不粉饰）
+
+1. **live 端到端仍未执行**：8 条 live 用例继续 deselect。R5（真实会话发送以量化 `send_task` 的焦点风险）
+   要用户本人授权；agent 模式 live 依旧禁止。
+2. **F10 审批弹层修复还没进正式路径**：A 在 `examples/agent_live_demo.py` 的 `DemoAdapter` 里实测出可用序列
+   （可信 `Input.dispatchMouseEvent` 点开审批触发器，再用 JS `row.click()` 选中 `permissionModeItem` 行且
+   文本恰为「手动审批」，绝不选「完全访问」），但它活在演示子类里，**没有进 `adapter.py` 的正式路径**。
+3. **routed 管线还没接进控制平面**：`RoutedExecutor` / `IntegratedExecutor` / `operation_names` crosswalk /
+   `extended_envelope` 目前是「有测试、无调用方」的候选件；`apps/desktop-agent/engine.py` 走的仍是
+   `TraeAdapter` + `executor.perform`。接线时第 2 条里的窗口身份前提必须先满足。
+4. **`registry.py` 这个 pre-G1 shim 还活着**：A 的 `packages/semantic/locator_cache.py` 已在树里可以替换，
+   但替换会影响 Dashboard 的 heal 写入路径，属于产品决定，没有单方面动。
+5. **两个 MCP server 并存**是过渡态，不是设计目标；交付面仍是 `packages/mcp` 的冻结 8 工具。
+6. **`docs/api.md` 的扩展信封 / crosswalk 段落**仍标着「候选」，等双人 approve 才算契约生效。

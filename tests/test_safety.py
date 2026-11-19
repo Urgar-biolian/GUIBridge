@@ -1,11 +1,11 @@
 import pytest
 
-from execution.safety import HIGH_IMPACT, SafetyError, is_high_impact
+from execution.safety import (ApprovalRequired, HIGH_IMPACT, IdentityCheckFailed, SafetyError,
+                              SafetyGate, is_high_impact)
 
 
 @pytest.fixture
 def gate(store):
-    from execution.safety import SafetyGate
     return SafetyGate({"w1"}, store)
 
 
@@ -47,7 +47,6 @@ def test_high_impact_consumes_a_granted_token(gate):
 
 
 def test_a_storeless_gate_cannot_validate_tokens():
-    from execution.safety import SafetyGate
     gate = SafetyGate({"w1"})
     with pytest.raises(SafetyError) as err:
         gate.check_action("w1", "trae.chat.delete", "click", "token")
@@ -71,3 +70,54 @@ def test_allow_and_revoke(gate):
     gate.revoke("w2")
     with pytest.raises(SafetyError):
         gate.check_window("w2")
+
+
+# The perception lane reaches the same gate through two further doors — an identity callback instead
+# of a compared snapshot, and its own exception categories. Both are honoured by the merged gate,
+# so these are kept as that lane wrote them.
+
+
+def test_unknown_window_blocked(store):
+    gate = SafetyGate({"w1"}, approvals=store)
+    with pytest.raises(SafetyError) as ei:
+        gate.check_action("w2", "trae.chat.send_button", "click", None)
+    assert ei.value.code == "window_not_allowed"
+
+
+def test_normal_action_allowed(store):
+    gate = SafetyGate({"w1"}, approvals=store)
+    assert gate.check_action("w1", "trae.chat.send_button", "click", None) is None
+
+
+def test_high_impact_requires_an_approval_category(store):
+    gate = SafetyGate({"w1"}, approvals=store)
+    with pytest.raises(ApprovalRequired) as ei:
+        gate.check_action("w1", "trae.chat.approval_mode", "click", None)
+    assert ei.value.code == "approval_required"
+
+
+def test_high_impact_with_valid_token(store):
+    approval = store.create_approval({"semantic_id": "trae.chat.approval_mode", "action": "click"})
+    gate = SafetyGate({"w1"}, approvals=store)
+    approval_id = gate.check_action("w1", "trae.chat.approval_mode", "click", approval["token"])
+    assert approval_id == approval["approval_id"]
+    with pytest.raises(ApprovalRequired):
+        gate.check_action("w1", "trae.chat.approval_mode", "click", approval["token"])
+
+
+def test_a_gateless_token_is_not_an_approval(store):
+    """A grant that names nothing actionable buys nothing, whichever lane minted it."""
+    approval = store.create_approval({"note": "everything"})
+    gate = SafetyGate({"w1"}, approvals=store)
+    with pytest.raises(ApprovalRequired):
+        gate.check_action("w1", "trae.chat.approval_mode", "click", approval["token"])
+
+
+def test_identity_checker_failure(store):
+    def checker(window_id):
+        raise RuntimeError("process replaced")
+
+    gate = SafetyGate({"w1"}, approvals=store, identity_checker=checker)
+    with pytest.raises(IdentityCheckFailed) as ei:
+        gate.check_action("w1", "trae.chat.send_button", "click", None)
+    assert ei.value.code == "identity_mismatch"

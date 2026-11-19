@@ -1,0 +1,343 @@
+# GUIBridge 架构设计（独立研发任务书对齐版）
+
+状态：Phase 0 草案（2026-11-17）
+契约状态：本文件中的 Router / FocusGuard / ActionResult 接口为**草案**，按 D7 需 B 线 approve 后才冻结；`element.py`、Engine Protocol、`locators.yaml`、`schema.sql`、`api.md` 继续冻结，未获双人批准不得变更。
+
+## 1. 定位与边界
+
+GUIBridge 是面向 Windows 的通用桌面应用语义控制与跨 Agent 协作系统。本项目独立实现，不复制、移植、翻译或改写 vercel-labs/agent-desktop 的源代码，也不将其作为运行时依赖。参考范围限于 Windows/MCP/CDP 等公开标准与文档。
+
+本文件描述三项核心能力：
+
+- A. Capability-Aware Execution Router（能力感知执行路由）
+- B. FocusGuard（后台操作干扰检测）
+- C. AI IDE 语义适配器（当前目标：Trae）
+
+## 2. 设计原则
+
+1. Windows 优先，本期不支持 macOS / Linux。
+2. 原生应用优先系统语义接口（UIA），而不是模拟鼠标。
+3. UIA 不可用时允许 OCR / 视觉识别，但不把 OCR 定位能力误认为后台输入能力。
+4. 每个执行通道必须声明焦点干扰风险。
+5. 所有任务返回结构化执行结果。
+6. 无法确认是否成功的非幂等操作，禁止自动重复执行。
+7. 高影响操作必须经过用户审批。
+8. 不绕过系统安全桌面、权限边界或应用安全机制。
+
+## 3. 核心能力 A：Capability-Aware Execution Router
+
+### 3.1 通道模型
+
+| 通道 | 说明 | 典型前提 | 声明干扰风险 |
+|---|---|---|---|
+| `OFFICIAL_API` | 应用官方 API / SDK | 凭据、服务可用 | `NONE` |
+| `CLI` | 应用官方 CLI | 版本支持、可非交互 | `NONE` 或 `LOGICAL_ONLY` |
+| `UIA` | Windows UI Automation pattern 调用 | 控件暴露 Invoke/Value/Toggle 等 pattern | 不移动物理输入；焦点风险需实测（见 3.5，本机靶应用为 `FOCUS_SWITCH`） |
+| `APP_PROTOCOL` | 应用允许的专用协议，如 Electron CDP（仅 loopback） | 应用可托管启动/已开调试端口 | `NONE` |
+| `OCR_VISION` | 截图识别定位 | 目标可见 | 仅定位（locate-only，`actions=[]`）；定位/读用途实测 `NONE`（run `20261117T115715Z`，被动截图+离线推理）；若配合输入则继承输入风险，永不作写执行通道（原则 3，路由层强制见 R6） |
+| `FOREGROUND_INPUT` | SendInput / 物理级模拟 | 目标前台、可用输入 | `PHYSICAL_INPUT` |
+| `VM_ISOLATED` | 虚拟机/第二会话内执行 | 隔离环境 | `NONE`（对宿主） |
+
+### 3.2 干扰风险等级
+
+`NONE` < `LOGICAL_ONLY` < `FOCUS_SWITCH` < `PHYSICAL_INPUT`；`UNKNOWN` 视为不可用，除非用户显式批准。
+
+### 3.3 干扰策略
+
+| 策略 | 无审批允许 | 需审批 | 拒绝 |
+|---|---|---|---|
+| `STRICT_NO_INTERFERENCE` | `NONE`、`LOGICAL_ONLY` | `FOCUS_SWITCH`、`PHYSICAL_INPUT` | `UNKNOWN` |
+| `BALANCED` | `NONE`、`LOGICAL_ONLY`、`FOCUS_SWITCH` | `PHYSICAL_INPUT` | `UNKNOWN` |
+| `FOREGROUND_ALLOWED` | 全部已知风险（高影响动作仍走 SafetyGate 审批） | — | `UNKNOWN` |
+
+严格无干扰模式禁止未经批准的焦点切换、物理鼠标移动和键盘注入。策略只决定“通道是否可选”，高影响操作的审批由既有 `SafetyGate` 独立执行，两者叠加而非互相替代。**草案路由层另内置影响维度**（见 3.6）：`OperationImpact.HIGH` 的操作即便落在 `NONE` 风险通道，未经批准也被 `is_allowed` 拒绝、`operation_requires_approval` 返回 True，使原则 7 在新契约层即可强制执行，而不只依赖冻结的 `SafetyGate`。
+
+### 3.4 路由算法（Phase 1 使用静态能力表）
+
+输入：`Capability`（含 app 与 operation，来自真实 scan 的能力表）、`policy`、`approved`。
+输出：`ChannelDecision`。
+
+1. 取 `cap.channels` 中为真的通道。
+2. 按风险等级升序、同风险按通道优先级排序。
+3. 按策略过滤；需审批且未批准则跳过。
+4. 返回首个可用通道及其 fallbacks；无可用通道返回 `channel=None` 并给出原因（含负例证据，如“微信 4.x UIA 无节点”）。
+
+Phase 1 不做动态学习或在线探测；能力表由 `src/probe/run_experiments.py` 的 E5 扫描输出并人工复核，落为草案数据文件 `packages/routing/capabilities.draft.yaml`，由 `packages/routing/capability_table.py` 的 `load_capability_table()` 加载为 `Capability` 对象供 `StaticRouter` 消费。风险值取自实测（原生 UIA=`focus_switch`）；未用 FocusGuard 实测的通道（如 Trae CDP）保持 `unknown`，不得假设为 `logical_only`。
+
+### 3.5 Phase 1 实测修正（2026-11-17）
+
+`docs/experiments/background-control.md` 的 E1b 对受控 Win32 靶应用做了 3 种 pattern × 3 个后台窗口的隔离试验：
+
+- 9/9 效果回读成功，9/9 光标位移为 0；
+- 9/9 前台在动作窗口内切换到目标，9/9 未检测到外部输入；
+- 因此该应用的 UIA 风险应声明为 `FOCUS_SWITCH`，不能默认 `LOGICAL_ONLY`。
+
+设计修正：能力表按“应用 × 操作 × 控件 × 目标前后台状态”实测风险；`STRICT_NO_INTERFERENCE` 下未批准的 UIA 焦点切换仍应被拒。UIA 的“光标零位移”与“无焦点干扰”必须分开报告，不得用前者替代后者。
+
+增补 run `20261117T090104Z` 的 E1c（前台起步对照）进一步表明：目标已在前台时，9/9 UIA 动作仍引发瞬时焦点切换（切走再切回，`external_input=false`），其中 3 次短到 2 ms 轮询漏记、由 `EVENT_SYSTEM_FOREGROUND` 事件钩子捕获。因此“前台起步可视为无焦点干扰”的假设不成立，风险声明必须覆盖前后台两种状态，且 FocusGuard 需以事件钩子补捉瞬时切换。
+
+### 3.6 操作影响维度（原则 7，草案）
+
+干扰风险描述“通道对宿主焦点/输入的影响”，与“操作本身的影响”正交。一个 `NONE` 风险的官方 API 删除调用、或一次真实消息发送，仍可能是高影响、非幂等操作。为此 `Capability` 增加操作级元数据：
+
+- `impact: OperationImpact`（`LOW`/`HIGH`，默认 `LOW`）：`HIGH` 表示改状态/非幂等/破坏性/发送真实消息，必须经用户审批；`LOW` 表示只读或可安全回退。
+- `idempotent: bool`（默认 `True`）：供重试策略（4.2、原则 6）判定是否允许自动重试。
+
+强制点：`policy.is_allowed(policy, risk, approved, impact)` 在 `impact=HIGH` 且未批准时直接拒绝（与 `UNKNOWN` 同级硬门），`operation_requires_approval(policy, risk, impact)` 对 `HIGH` 恒返回 True；`StaticRouter` 两处分支均改用该组合判定。因此高影响操作不会因通道无干扰而被自动放行。草案能力表已标注：`trae.send_task`、`wechat.send_message` 为 `high`/非幂等；只读接口与受控靶应用操作为 `low`。含单测 `tests/test_impact_approval.py`（25 例）。该维度为草案，Phase 2 接入执行器时与冻结 `SafetyGate` 叠加生效。
+
+## 4. 核心能力 B：FocusGuard
+
+### 4.1 监测信号
+
+- 前台窗口 HWND（动作前后 + `EVENT_SYSTEM_FOREGROUND` 事件）。
+- 用户鼠标位置（动作前后采样 + 动作窗口内轨迹）。
+- 系统最后输入年龄（`GetLastInputInfo`），用于标记窗口内是否存在外部输入，避免把用户操作归因给自动化动作。
+- 目标窗口是否处于激活状态。
+- 自动化动作是否引起非预期焦点切换。
+- 目标操作是否真正生效（控件状态 / 文本 / 业务后置条件）。
+
+### 4.2 四态结果
+
+| 状态 | 含义 |
+|---|---|
+| `SUCCESS_NO_INTERFERENCE_OBSERVED` | 操作成功，且监测窗口内未观察到干扰 |
+| `SUCCESS_WITH_INTERFERENCE` | 操作成功，但观察到焦点切换/光标移动等干扰 |
+| `FAILED` | 确认失败（抛出错误 / pattern 不可用等明确错误） |
+| `UNCONFIRMED` | 动作已执行、无错误，但未能正面确认成功；不得据此断言“确定失败”（非幂等操作禁止自动重试） |
+
+**表述纪律**：`SUCCESS_NO_INTERFERENCE_OBSERVED` 只表示“未观察到”，不能表述为“绝对无干扰”。文档与 UI 必须保留该限定。
+
+**分类映射（`classify()`）**：`error` 非空 → `FAILED`；`verified=True` → 两种成功态（按通道与干扰信号细分）；`verified=False` 且无 `error` → `UNCONFIRMED`。早期实现把“未确认成功”一律归 `FAILED`，会使 `UNCONFIRMED` 不可达、原则 6 的未确认分支形同虚设，且把“未确认”误报为“确定失败”；现已修正为保守映射（缺正面确认 ≠ 确定失败）。含单测 `tests/test_phase1_classification.py`。另：`src/probe/uia_exec.py` 的 `ActionResult.risk` 曾硬编码 `LOGICAL_ONLY`，与本机靶应用实测 `FOCUS_SWITCH`（E1b/E1c）矛盾，已改为 `FOCUS_SWITCH`；`run_experiments.action_record` 的默认风险同样由 `LOGICAL_ONLY` 改为 `FOCUS_SWITCH`（与其默认 UIA 通道一致）。修正经 run `20261117T100205Z` 端到端实测确认（3/3 `focus_switch`）；历史 run 为冻结证据不追溯改写，后续复跑按实测风险报告。
+
+**重试约束落地**：原则 6（非幂等未确认操作禁止自动重试）由草案 `packages/focusguard/retry_policy.py` 的 `decide_retry(state, idempotent, attempts, max_attempts)` 强制：`UNCONFIRMED`/`FAILED` 且非幂等一律 `allow_retry=False` 且 `requires_approval=True`；幂等操作仅在预算内可重试，预算耗尽转人工审批；两种成功态不重试。该约束在 Phase 2 接入执行器前为独立草案，含单测 `tests/test_retry_policy.py`（11 例）。
+
+### 4.3 采样限制
+
+FocusGuard 采用动作前后快照 + 2 ms 前台/光标采样 + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 事件钩子（独立消息泵线程）。纯轮询不保证捕获两次采样之间的瞬时切换：增补 run 的 E1c 中轮询漏记 3 次瞬时切换，事件钩子 9/9 全部捕获。E2 停留曲线在实测约 57–138 ms 的注入切换上，轮询与钩子均 9/9 检出、0/3 误报。后续 `src/probe/dwell_limit.py` 用更快注入（线程输入一次性附着 + 裸 `SetForegroundWindow`）把停留压到毫秒级，0/5/10/20/50 ms 各 5 次共 25/25 轮询与钩子均检出、0 外部输入污染——说明此前 ~57 ms 下限是 `quick_foreground` 开销而非 FocusGuard 极限。钩子另采集系统 `event_time`（`FocusRun.hook_event_times` + `hook_dwell_ms()`）做精确计时：最短可解析真实停留 15 ms（run `20261117T093513Z`），`time.time()` 的 8.9/5.1 ms 含分发延迟不作下限；`event_time` 为 1 ms 分辨率，同 tick 事件无法解析（1 个 None）。**<2 ms 的切换仍未实证覆盖**（2 ms 采样盲区 + 1 ms 计时分辨率）。大样本复核（`src/probe/focusguard_reliability.py`，run `20261117T093120Z`）：30 静默负例误报 0/30、15 注入正例（~100 ms）检出 15/15（轮询与钩子均 15/15），强化 E2 小样本结论。`GetLastInputInfo` 只能标记窗口内“存在输入事件”，不能区分输入来源；Physical Input 通道自身注入的输入需单独标记为动作注入。
+
+## 5. 核心能力 C：AI IDE 语义适配器（Trae）
+
+### 5.1 通道选择依据
+
+`src/probe/PROBE_REPORT.md` 实测（F1–F12）：
+
+- Trae 3.6.13 的 UIA 树默认仅 17 个框架级节点；加 `--force-renderer-accessibility` 后 62 个节点，但聊天输入框/发送按钮仍不可见（F1/F2）。
+- CDP 可读取完整聊天 DOM 语义并完成提交→状态→读回闭环（F3/F6/F12）。
+- 审批模式触发器无法通过 CDP 打开菜单，Agent 模式必须由人工预先切换为手动审批（F10）。
+
+结论：Trae 属于 Electron 目标，主通道为 `APP_PROTOCOL`（loopback CDP），而非 UIA。这符合任务书“应用允许的专用协议”通道，不违反“原生优先系统语义接口”。
+
+### 5.2 业务接口契约
+
+| 接口 | 前置条件 | 执行步骤 | 后置条件 | 验证证据 |
+|---|---|---|---|---|
+| `send_task` | 目标窗口白名单；chat 模式已确认；审批为手动或显式批准；项目路径在允许范围 | 定位 composer → 写入文本 → 点击发送 | 返回 `task_id`，状态 `submitted` | composer 清空、发送按钮状态、运行态信号 |
+| `get_task_status` | 任务存在 | 读取运行态/审批/回复文本 | 状态 `submitted/running/claimed_done/failed/unknown` | 状态信号 + 回复长度/内容；unknown 抑制窗口 180s |
+| `read_task_result` | 状态为 `claimed_done` | 读取会话文本 | 返回文本并标记 `untrusted=true` | DOM 读回快照；回复内容永不作为指令执行 |
+| `verify_code_changes` | 隔离 worktree；`allowed_files`；`test_command` | 采集 git 变更 → 运行测试 → 校验范围 | `verified` / `failed` | `git status --porcelain` 范围 + 测试退出码 + 证据 ID |
+
+现有实现：`packages/adapters/trae/adapter.py`、`packages/execution/verifier.py`、`packages/router_engine.py`。Phase 2 将 `verify_code_changes` 正式接入适配器与 MCP 表面。
+
+焦点干扰实测（run `20261117T092712Z`，`src/probe/trae_cdp_focus.py`）：只读 CDP 路径（`get_task_status`/`read_task_result`）经 FocusGuard 包裹 5/5 光标 0、无前台切换、无外部输入，实测风险 `none`，已写入能力表草案。`send_task` 的发送点击未覆盖，风险仍 `unknown`，需授权 live 测量；不得由只读 `none` 外推。
+
+## 6. 数据契约（草案，待 B 线 approve）
+
+```python
+class Channel(str, Enum):
+    OFFICIAL_API; CLI; UIA; APP_PROTOCOL; OCR_VISION; FOREGROUND_INPUT; VM_ISOLATED
+
+class InterferenceRisk(str, Enum):
+    NONE; LOGICAL_ONLY; FOCUS_SWITCH; PHYSICAL_INPUT; UNKNOWN
+
+class InterferencePolicy(str, Enum):
+    STRICT_NO_INTERFERENCE; BALANCED; FOREGROUND_ALLOWED
+
+@dataclass(frozen=True)
+class Capability:
+    app: str
+    operation: str
+    channels: dict[Channel, bool]
+    risk: dict[Channel, InterferenceRisk]
+    preconditions: dict[Channel, list[str]]
+    unsupported_reason: str | None
+
+@dataclass
+class ChannelDecision:
+    channel: Channel | None
+    risk: InterferenceRisk
+    requires_approval: bool
+    fallbacks: list[Channel]
+    reason: str
+
+@dataclass
+class FocusSnapshot:
+    foreground_hwnd: int
+    cursor_xy: tuple[int, int]
+    target_active: bool
+    ts: float
+
+class ResultState(str, Enum):
+    SUCCESS_NO_INTERFERENCE_OBSERVED
+    SUCCESS_WITH_INTERFERENCE
+    FAILED
+    UNCONFIRMED
+
+@dataclass
+class ActionResult:
+    state: ResultState
+    channel: Channel
+    risk: InterferenceRisk
+    effect_verified: bool
+    evidence: dict
+    focus_before: FocusSnapshot
+    focus_after: FocusSnapshot
+    unexpected_focus_switch: bool
+    task_id: str | None
+```
+
+代码草案：`packages/routing/`、`packages/focusguard/`、`packages/execution/uia_channel.py`。所有模块在 Phase 1 前不接入 `engine` / `mcp_gateway` / Dashboard。
+
+## 7. 与现有原型资产的关系
+
+| 阶段 | 现有资产 | Phase 1 处理 |
+|---|---|---|
+| S0 | `src/probe/` 探针与 F1–F12 | 复用；Trae 能力证据重组进实验文档 |
+| S1 | `packages/perception/*`、`packages/semantic/*` | 复用；UIA 通道扩展执行能力（Phase 1） |
+| S2 | `adapters/trae`、`execution`、`events`、`engine`、`mcp_gateway` | 冻结，不改接口；Phase 2 整合 Router/FocusGuard |
+| S3 | `verifier`、`examples/handoff_demo.py` | 复用；Phase 2 接入 Trae 适配器 |
+| S4 | 自修复 + Dashboard | 冻结；Dashboard 不作为 Phase 1 优先项 |
+| S5 | A/B/C benchmark | 复用方法；Phase 1 新增原生 UIA/干扰实验 |
+
+## 8. 安全边界
+
+- CDP 仅绑定 loopback，随机端口，进程退出即关闭；不开放远程调试。
+- Agent 模式必须由人工设置为手动审批；无法自动设置时返回 `unverified:*` 并阻断。
+- 目标窗口白名单；高影响动作需一次性审批 token。
+- 聊天/文档文本一律视为不可信数据，`read_result` 返回值不得作为指令执行。
+- 探针截图/dump 仅本地保存，不入库、不上传公开站点。
+- 不绕过 UAC/安全桌面，不注入系统进程，不安装内核驱动。
+
+## 9. 验收映射
+
+| 任务书验收项 | Phase 1 实验 | 证据 |
+|---|---|---|
+| 至少一个应用支持不移动物理鼠标的语义操作 | E1（原生 UIA）+ 已有 Trae CDP | `var/experiments/*.json` + Trae 探针 |
+| 记录焦点变化事件 | E2 | FocusGuard 事件日志 |
+| 检测目标控件操作是否成功 | E1/E3 | 状态回读 + 四态结果 |
+| 明确识别不支持后台操作 | E5（含微信 4.x / Trae UIA 负例）+ 自绘靶应用负例（run `20261117T102927Z`） | capability scan 输出 |
+| Trae 实际能力有测试证据 | E6（只读复跑 + 授权 live 无害消息）+ 正式适配器读路径实测 | `src/probe/PROBE_REPORT.md` 增补；Chat 模式读回 `OK`、工作区零变更；`verify_trae_adapter_read.py` run `20261117T112436Z` 5/5 `none` |
+| 所有实验可重复运行 | `src/probe/run_experiments.py` | 固定环境记录 + 原始 JSON |
+
+## 10. 开放问题
+
+1. ~~ctypes Win32 标准控件经 MSAA→UIA 桥的 pattern 可用性需 E1 实测~~ 已实测：Invoke/Value/Toggle/Text 均可用（E1/E1b/E1c），无需切换备选靶应用。
+2. ~~FocusGuard 漏检率与采样频率的关系需量化~~ 已部分量化：事件钩子补捉轮询漏掉的瞬时切换（E1c）；`dwell_limit.py` 快注入实测停留低至约 8.9 ms，25/25 轮询+钩子检出、0 污染；<2 ms 理论盲区仍待量化。
+3. Trae 版本升级后的选择器漂移由既有 heal 流程覆盖，需 Phase 2 复验。
+4. 新契约需 B 线 approve 后才能从“草案”转为冻结（见第 11 节评审包）。
+5. **外部输入下的效果归因**：`classify()` 目前对 `verified=True` 判成功态，即便 `external_input_during_window=True`。对不注入输入的通道（UIA/APP_PROTOCOL），窗口内出现外部输入意味着观测到的效果可能由用户而非动作造成，效果归因存疑——是否应降级为 `UNCONFIRMED`？对 `FOREGROUND_INPUT` 则需先区分“动作自身注入”与“真正外部输入”（当前 `FocusRun` 仅一个布尔标记，未分离）。实验层已用“污染运行弃用并保留原文件”规避，但契约层是否内置降级待定，需 B 线评审决定，避免草率改动误伤物理输入通道的自注入情形。
+
+## 11. 契约评审包（待 B 线 approve）
+
+本节汇总 Phase 1 形成的新契约草案与实测依据，供 B 线评审。**评审通过前不得接入冻结的 `engine` / `mcp_gateway` / Dashboard，不得变更旧契约（`element.py`、Engine Protocol、`locators.yaml`、`schema.sql`、`api.md`）。** G0 尚未正式通过。
+
+### 11.1 待评审草案清单
+
+| 草案 | 位置 | 状态 |
+|---|---|---|
+| `Channel` / `InterferenceRisk` / 策略过滤 | `packages/routing/capability.py`、第 3、6 节 | 草案 |
+| `FocusSnapshot` / `FocusRun` / `FocusGuard` Protocol | `packages/focusguard/monitor.py`、`outcome.py`、第 4 节 | 草案 |
+| 四态分类 `classify()` | `packages/focusguard/classify.py`、第 4.2 节 | 草案（含单测） |
+| UIA 执行通道与风险声明 | `src/probe/uia_exec.py`、第 3.5 节 | 草案 |
+| UIA 形式化通道草案实现（注入式，未接入） | `packages/execution/uia_channel.py`、第 11.4 节差异 8 | 草案（含单测） |
+| Trae 四接口契约 | 第 5.2 节 | 草案（Phase 2 正式接入） |
+| 实测能力表 + 加载器 | `packages/routing/capabilities.draft.yaml`、`capability_table.py` | 草案（含单测） |
+| 重试策略（原则 6 落地） | `packages/focusguard/retry_policy.py`、第 4.2 节 | 草案（含单测） |
+| 操作影响维度 + 审批门（原则 7 落地） | `packages/routing/capability.py`、`policy.py`、`router.py`、第 3.6 节 | 草案（含单测） |
+| 四态→冻结信封桥接（集成候选） | `packages/focusguard/legacy_bridge.py`、第 11.4 节 | 草案（含单测，未接入冻结模块） |
+| R2 选项 (a) 向后兼容扩展信封候选 | `packages/focusguard/extended_envelope.py`、第 11.5 R2 | 草案（7 例单测 + run `20261117T111617Z` 实测；未改冻结 `api.md`） |
+| R3 选项 (a) 外部输入归因候选 | `packages/focusguard/attribution.py`、第 11.5 R3 | 草案（12 例单测含归因→重试组合守护 + run `20261117T111617Z` 实测污染降级；未替换 `classify()`） |
+| R4 选项 (b) 操作名 crosswalk 候选 | `packages/routing/operation_names.py`、第 11.5 R4 | 草案（8 例单测含漂移守护 + 真实表实测一致；未改冻结 TOOL_SPECS） |
+| R6 选项 (a) OCR 感知路由候选 | `packages/routing/ocr_guard.py`、第 11.5 R6 | 草案（7 例单测 + run `20261117T111617Z` 实测；未替换 `StaticRouter`） |
+| Phase 2 集成适配层候选（路由→审批双门→ guarded 执行→重试→四态信封） | `packages/execution/routed_executor.py`、第 11.4 差异 4/5/6 | 草案（11 例单测；注入式 execute/consume_approval，未接入冻结 engine/ActionExecutor/SafetyGate） |
+| G1 证据落库桥 + 端到端集成执行器 + 引擎可选 routed 入口 | `packages/focusguard/evidence_bridge.py`、`packages/execution/integrated.py`、`engine.send_task_routed`、第 11.4 G1 落地 | 增量接入（17 例单测；冻结默认路径未改，chat-only） |
+| S4-a heal 提案→store 审核桥 | `packages/semantic/heal_store.py`（`recording_patch_writer`） | 增量（4 例单测；heal 文件审计 + `store.heal_patches` pending 行同 patch_id，歧义/验证拒绝两者皆无；不改冻结 resolver/heal/cache/store） |
+
+### 11.2 B 线 approve 检查项
+
+- [ ] 确认 UIA 风险按“应用 × 操作 × 控件 × 前后台状态”实测，本机靶应用声明为 `FOCUS_SWITCH`，不接受 `UIA=LOGICAL_ONLY` 默认值。
+- [ ] 确认 E1c 前台起步仍存在瞬时焦点切换的结论，认可以事件钩子作为 FocusGuard 必备信号（而非可选）。
+- [ ] 确认四态语义：`SUCCESS_NO_INTERFERENCE_OBSERVED` 仅表示“未观察到”；Physical Input 验证成功一律 `SUCCESS_WITH_INTERFERENCE`；非幂等未确认操作禁止自动重试。
+- [ ] 确认 `external_input_during_window` 仅标记“窗口内有输入事件”，不用于单独判定干扰；污染运行须弃用并保留原文件。
+- [ ] 确认 E2 停留曲线仅覆盖 57–138 ms，<50 ms 漏检率未量化，不得外推为“任意瞬时切换可检出”。
+- [ ] 确认 Trae 主通道为 `APP_PROTOCOL`（loopback CDP），live 证据仅限授权的一次 Chat 无害消息；agent 模式默认手动审批。
+- [ ] 确认微信负例（可见窗口仅 4 个 UIA 框架节点）作为“不支持后台语义操作”的证据。
+- [ ] 复核 `capabilities.draft.yaml` 各条目的实测风险与证据 run id；确认 Trae 只读接口已实测 `none`（run `20261117T092712Z`），而 `send_task` 发送点击仍 `unknown`（不假设 `logical_only`），并认领授权 live 测量任务。
+- [ ] 确认新契约冻结前不接入冻结模块；双人 approve 记录留痕。
+- [ ] 确认原则 6 由 `retry_policy.decide_retry` 强制（非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试并转人工审批，幂等仅预算内重试），复核 `tests/test_retry_policy.py` 矩阵；Phase 2 执行器接入时须调用该策略而非自行重试。
+- [ ] 确认原则 7 由草案路由层 `OperationImpact.HIGH` 审批门强制（高影响操作即便 `NONE` 风险也须批准），复核 `tests/test_impact_approval.py` 与能力表 `impact`/`idempotent` 标注；确认其与冻结 `SafetyGate` 叠加而非替代，`UNKNOWN` 风险即便批准仍不可用。
+- [ ] 裁决开放问题 5：外部输入窗口内 `verified=True` 是否对非输入通道降级 `UNCONFIRMED`，以及 `FOREGROUND_INPUT` 自注入与外部输入的分离方案；确认 `classify()` 保守映射（`UNCONFIRMED` 可达）与探针实测 `FOCUS_SWITCH` 风险报告。候选 `attribution.classify_with_attribution`（R3 选项 a）已经 run `20261117T111617Z` 实测落地：invoke 窗口真实污染触发降级、清洁窗口与 `classify()` 一致；`FOREGROUND_INPUT` 自注入分离仍需显式标记机制（未实现）。
+- [ ] 评审 11.4 集成就绪性差异：裁决是否扩展 `api.md` 信封以承载四态/风险（否则 `UNCONFIRMED` 在 MCP 边界退化为失败，需双人 approve）；确认审批双门叠加、重试前调 `decide_retry`、操作命名对齐、`UIAExecChannel` 实测回填方案。
+
+### 11.3 实测依据索引
+
+- 基线 run `20261117T082451Z`、增补 run `20261117T090104Z`：`docs/experiments/background-control.md` 第 7、11 节。
+- 短停留检测限 run `20261117T091848Z`：`src/probe/dwell_limit.py`，实测停留低至约 8.9 ms、25/25 检出（第 12 节）；精确计时复跑 run `20261117T093513Z` 最短可解析真实停留 15 ms（第 12.1 节）。
+- 四态分类单测：`tests/test_phase1_classification.py`（15 例）——含 `error→FAILED`、`verified=False` 无错误→`UNCONFIRMED`（四态可达、保守映射）、`detect_unexpected_focus_switch` 聚合（轮询漏记、仅钩子捕获仍判干扰）与 `hook_dwell_ms` 精确计时（含 32 位回绕、缺失对返回 None）。
+- 路由契约单测：`tests/test_phase1_routing.py`（18 例）——锁定“实测 UIA=FOCUS_SWITCH 在 STRICT 下未批准被拒、批准后可用”、风险升序+通道优先级排序、fallback 排除被拒通道、UNKNOWN 永不可用、策略×风险×审批矩阵。对应 11.2 检查项 1、3 已有可执行证据。
+- 实测能力表单测：`tests/test_capability_table.py`（8 例）——草案表加载、原生 UIA 实测 focus_switch、BALANCED 选 UIA / STRICT 未批准被拒、微信负例返回原因、自绘负例返回原因（`selfdrawn-test.invoke` 无支持通道）、Trae send_task CDP unknown 不自动放行、Trae 只读接口实测 none 可在 STRICT 放行。
+- 自绘靶应用能力扫描 run `20261117T102927Z`：`src/probe/selfdrawn_app.py`（GDI 自绘客户区控件、无子 HWND）+ `src/probe/scan_selfdrawn.py`。自绘窗口 UIA 树 7 节点：`has_edit=false`、`content_button_count=0`，仅 3 个非客户区标题栏按钮（最小化/最大化/关闭，TitleBar 下，属窗口框架 chrome 而非应用内容）；原生标准控件靶应用对照 `has_edit=true`、`content_button_count=1`。结论：自绘应用内容无 UIA 语义，后台语义操作不可用、OCR/视觉仅定位。已落能力表草案 `selfdrawn-test.invoke`（unsupported，含原因与证据）。补齐验收项 4 的第三类应用负例（原生/Electron/自绘）。
+- OCR 仅定位通道焦点实测 run `20261117T115715Z`：`src/probe/verify_ocr_locate_focus.py`，在受控自绘靶应用（UIA 无内容语义、OCR 正是其定位兜底）上以 `mss` 被动截图目标窗口区域 + RapidOCR 离线推理包在 FocusGuard 里，3 次试验各定位 11 个文本框（含靶应用自绘标签 `Self-drawn UI…`/`Run action`/`initial`/`status:clicked=0`），`locate_only_all=True`（所有 `GUIElement` `role=text`、`actions=[]`、`source=["ocr"]`）。trial 0 受真实外部输入污染（光标 1px、`ext=True`）按既有方法弃用，2/2 清洁试验光标 0、无前台切换、无外部输入 → `measured_locate_risk=none`。把原则 4「每通道声明**实测**风险」补到此前仅有设计断言、无测量证据的 OCR 通道：定位/读用途实测 `NONE`，与原则 3「OCR 仅定位、非后台输入」一致（永不作写执行通道）。配套代码层守护 `tests/test_ocr_parse.py` 新增 3 例（共 6 例）锁定 `elements_from_ocr` 产出 locate-only 元素（`actions=[]`、`role=text`、`source=["ocr"]`）、offset/confidence 加权与空输入。严格只读：无点击/输入注入/消息/切模式，截图仅目标窗口区域，PNG/JSON 入 gitignored `var/experiments/` 不入库。**未改能力表操作集**（OCR 作为跨应用定位通道的风险证据落本索引与 3.1 通道模型，新增表条目涉及 R4 操作名 crosswalk，留 B 线裁决）。
+- 重试策略单测：`tests/test_retry_policy.py`（11 例）——成功态不重试、非幂等 `UNCONFIRMED`/`FAILED` 拒绝自动重试且 `requires_approval=True`、幂等预算内可重试、预算耗尽转审批、非幂等即便预算有余仍拒绝。对应 11.2 原则 6 检查项的可执行证据。
+- 影响审批单测：`tests/test_impact_approval.py`（25 例）——三策略下 `HIGH` 影响 `NONE` 风险未批准被拒/批准可用、`LOW` 影响 `NONE` 风险免审批、`HIGH`+`UNKNOWN` 即便批准仍拒、`operation_requires_approval` 对 `HIGH` 恒真、`StaticRouter` 高影响门控、能力表 `send_task` high/非幂等与只读接口 low/幂等标注。对应 11.2 原则 7 检查项的可执行证据。
+- 草案契约组合单测：`tests/test_draft_contract_integration.py`（5 例）——不接入冻结执行器，验证能力表元数据贯通：`send_task` 被路由拒绝（unknown）且非幂等未确认禁重试；只读接口幂等元数据放行重试；原生 invoke 分类 `SUCCESS_WITH_INTERFERENCE` 后不重试、`FAILED` 与 `UNCONFIRMED` 非幂等均禁重试。证明路由→分类→重试三草案契约可组合。
+- 能力表完整性守护单测：`tests/test_capability_table_integrity.py`（5 例）——支持通道若为 `unknown` 风险必须有书面测量缺口说明、任何确定风险（`none`/`logical_only`/`focus_switch`/`physical_input`）必须有实测证据（原则 4，按 `InterferenceRisk` 枚举导出避免字符串漂移）、仅不支持条目必须给原因、每条 `impact`/`idempotent` 可解析、写操作不得以 `OCR_VISION` 为后台执行通道（原则 3 数据层守护，路由层强制与否见 R6）。把“不得假设风险/不得伪造数据”纪律落为对真实数据文件的可持续检查。
+- 冻结信封桥接单测：`tests/test_legacy_bridge.py`（8 例）——四态→`success`/`verified`/`error_code` 映射、干扰标记与风险透传，并显式锁定 `UNCONFIRMED` 与 `FAILED` 在冻结两态布尔下不可区分（仅保留的 `state` 可分离）。把 11.4 集成差异 1/2 落为可执行候选，未接入冻结模块、未改 `api.md`。
+- UIA 形式化通道草案单测：`tests/test_uia_channel.py`（12 例）——fake 注入下 invoke/set_value/toggle 的四态（验证成功+焦点切换→`SUCCESS_WITH_INTERFERENCE`、无干扰→`SUCCESS_NO_INTERFERENCE_OBSERVED`、pattern 不可用/控件缺失/调用抛错→`FAILED`、执行但未回读确认→`UNCONFIRMED`）、实测 `FOCUS_SWITCH` 风险、`read_state` 委托、焦点证据透传、仅光标位移亦判干扰。把 11.4 差异 8 的空壳补为可执行草案，未接入冻结执行器。
+- UIA 形式化通道实测验证 run `20261117T102127Z`：`src/probe/verify_uia_channel.py`，以真实适配器（uiautomation pattern + Win32FocusGuard + 靶应用回读）驱动正式 `UiaPatternChannel`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`、`state=success_with_interference`、`effect_verified=True`，与探针 `uia_exec.py` 实测一致——证明形式化草案通道在真实测量下复现四态与实测风险（非仅 fake；原始 JSON 入 gitignored `var/experiments/`）。
+- Trae 只读 CDP 焦点实测 run `20261117T092712Z`：`src/probe/trae_cdp_focus.py`，只读路径 5/5 无干扰（第 13 节）。
+- Trae 形式化适配器读路径实测 run `20261117T112436Z`：`src/probe/verify_trae_adapter_read.py`，驱动真实 `TraeAdapter`（`packages/adapters/trae/adapter.py`）的 `probe_channels` + 完整 `STATE_EXPR` `_state` 读（`get_status`/`read_result` 的读机制）包在 FocusGuard 里，5/5 光标 0、无前台切换、无外部输入，`measured_read_risk=none`；`probe_channels={cdp:true,uia:false,ocr:false}` 与能力表 Trae 通道声明一致。把能力 C 的**正式适配器代码路径**（而非仅裸 CDP 脚本）落到真实测量数据，复现只读 none 风险。严格只读：无 send_task/点击/切模式/消息，仅记录长度/布尔不录聊天原文；`send_task` 发送点击仍未测、风险保持 `unknown`（R5）。原始 JSON 入 gitignored `var/experiments/`。
+- FocusGuard 大样本可靠性 run `20261117T093120Z`：`src/probe/focusguard_reliability.py`，误报 0/30、检出 15/15（第 14 节）。
+- 分类/风险修正实测验证 run `20261117T100205Z`：`src/probe/verify_classify.py`，受控靶应用 invoke/set_value/toggle 各一次，3/3 `risk=focus_switch`（修正后非 `LOGICAL_ONLY`）、`state=success_with_interference`、`effect_verified=True`，端到端确认四态分类与实测风险报告（原始 JSON 入 gitignored `var/experiments/`）。
+- 草案契约链实测组合 run `20261117T101352Z`：`src/probe/verify_contract_chain.py`，受控靶应用三操作各跑完整草案链（能力表→`StaticRouter`→真实 UIA 执行→四态分类→`decide_retry`→`to_legacy_envelope`）。3/3：STRICT 未批准拒绝（`channel=None`）、STRICT 批准与 BALANCED 均选 UIA、实测 `risk=focus_switch`、`success_with_interference`、成功态不重试、冻结信封 `success=True`。把 11.3 的合成组合单测（`test_draft_contract_integration.py`）落到真实测量数据，证明路由→分类→重试→桥接四草案契约在实测下可组合（不接入冻结执行器；原始 JSON 入 gitignored `var/experiments/`）。
+- 决策候选实测落地 run `20261117T111617Z`：`src/probe/verify_decision_candidates.py`，把 R2/R3/R4/R6 四个候选从合成单测落到受控靶应用真实测量数据。5/5 检查通过：`extended_envelope` 透传实测 `risk=focus_switch` 与四态（3/3 `success=True/verified=True`）；`route_ocr_aware` 对真实 native-test（仅 UIA）仍选 UIA 不受扰（3/3）；`operation_names` crosswalk 与真实能力表 Trae 键 ↔ 冻结 TOOL_SPECS 一致。**关键非合成证据**：`invoke` 窗口实测 `external_input_during_window=True`（真实外部输入污染），`classify_with_attribution` 据此把 `verified=True` 降级 `UNCONFIRMED`，而 `set_value`/`toggle` 窗口 `external=False` 时与 `classify()` 一致——证明 R3 归因候选在真实污染下确实生效、非空操作（原始 JSON 入 gitignored `var/experiments/`）。
+- 代码提交：`4665ab8`（P0 实验改进）。
+
+### 11.4 Phase 2 集成就绪性与契约差异（只读审计，未改冻结模块）
+
+对冻结契约（`semantic/element.py`、`mcp_gateway/server.py` 的 Engine Protocol/TOOL_SPECS、`execution/actions.py`、`execution/safety.py`）与新草案层做只读比对，列出 Phase 2 接入前必须裁决/桥接的差异。**本节仅为评审输入，不代表已接入；G0 未过、冻结模块未改。**
+
+1. **两套 `ActionResult` 不兼容**：冻结 `semantic.element.ActionResult` 为两态布尔（`success`/`verified` + `before/after_snapshot_id` + `error_code` + `evidence: list[str]`）；草案 `focusguard.outcome.ActionResult` 为四态（`state` + `channel` + `risk` + `effect_verified` + `evidence: dict` + 内联 `FocusSnapshot`）。桥接需把四态映射回冻结信封，但**冻结 `success` 布尔无法区分 `FAILED` 与 `UNCONFIRMED`**——两者都落 `success=False/verified=False`，原则 6 的“未确认”语义在 MCP 边界丢失。裁决项：是否扩展 `api.md` 信封增加 `state`/`risk` 字段（属契约改动，需双人 approve），否则 UNCONFIRMED 只能在引擎内部保留、对外退化为失败。候选桥接已落为草案 `packages/focusguard/legacy_bridge.py`（`to_legacy_envelope`，含 8 例单测显式锁定该退化），未接入冻结模块、未引入新错误码，供评审评估。R2 选项 (a) 的向后兼容扩展候选亦已落为草案 `packages/focusguard/extended_envelope.py`（`to_extended_envelope`，7 例单测，保留冻结字段并新增 `state`/`risk`/`interference_observed`），同样未改 `api.md`、未接入冻结模块。
+2. **四态→冻结映射（建议）**：`SUCCESS_NO_INTERFERENCE_OBSERVED`/`SUCCESS_WITH_INTERFERENCE` → `success=True, verified=True`（干扰信息需新信封字段承载）；`FAILED` → `success=False, error_code` 置位；`UNCONFIRMED` → `success=False, verified=False` 且**必须**另带 `state=unconfirmed` 标记，避免与确定失败混淆。
+3. **证据形态**：冻结 `evidence` 为快照 id 列表（`store.add_snapshot`），草案为 dict + 内联 `FocusSnapshot`。Phase 2 须把 `FocusSnapshot`/干扰证据经 `store` 落库并以 id 引用，方能塞进冻结 `evidence: list[str]`。
+4. **审批双门叠加**：冻结 `SafetyGate.check_action(approval_token)` 颁令/校验高影响令牌；草案 `operation_requires_approval(impact)` 只做“是否需审批”标记、不发令牌。Phase 2 须把路由 `requires_approval=True`（含 `HIGH` 影响）接到 `SafetyGate` 的令牌校验，二者叠加而非替代。
+5. **重试**：冻结 `ActionExecutor` 单次执行、无重试循环，原则 6 当前由构造保证。Phase 2 若引入重试，必须先调 `decide_retry(state, idempotent, ...)`；非幂等 `UNCONFIRMED`/`FAILED` 不得自动重试。
+6. **actor 契约信息丢失**：冻结 `ActionExecutor.actor(...) -> bool`，草案 `UIAExecChannel.invoke/... -> ActionResult`（四态）。bool 返回值丢四态/风险，桥接适配器须保留草案 `ActionResult` 供信封序列化，不能只取 bool。
+7. **操作命名对齐**：冻结 TOOL_SPECS 为 `trae.send_task`/`trae.get_status`/`trae.read_result`；草案能力表用 `send_task`/`get_task_status`/`read_task_result`。Phase 2 须统一 operation 命名（能力表键 ↔ TOOL_SPECS ↔ Engine 方法），否则路由查表与工具分发对不上。草案 crosswalk 候选已落为 `packages/routing/operation_names.py`（R4 选项 b，8 例单测含漂移守护），未接入冻结引擎、未改冻结规格。
+8. **`UIAExecChannel` 形式化通道仍待 B approve 接入**：Phase 1 实测逻辑在 `src/probe/uia_exec.py`；`packages/execution/uia_channel.py` 的 `UiaPatternChannel` 已从 NotImplementedError 空壳补为**草案实现**（注入 resolve/pattern_of/guard_for/read_state/verify，guard 包裹 pattern 调用 + 回读 + 四态分类，实测 `FOCUS_SWITCH` 风险；含 12 例 fake 单测 `tests/test_uia_channel.py`，并经 run `20261117T102127Z` 真实靶应用实测复现 3/3 `focus_switch`），但**未接入冻结执行器**。Phase 2 须裁决注入契约（resolver/verifier 签名与 frozen `ActionExecutor` 对齐）、把实测探针逻辑收敛为正式通道并经 B approve 后接入。
+
+**集成适配层候选（差异 4/5/6 的可执行落地，未接入冻结模块）**：`packages/execution/routed_executor.py` 的 `RoutedExecutor` 把已验证草案组合成与冻结 `ActionExecutor`/`SafetyGate` 关注点对齐的执行器形表面——`route_ocr_aware` 选通道（写操作排除 OCR，原则 3）→ 若 `decision.requires_approval` 则经注入的 `consume_approval` **先消费审批令牌再执行**（差异 4：冻结 `SafetyGate` 仅按 `semantic_id` 关键词门控，不识 capability `OperationImpact.HIGH`/实测风险，本适配层把路由审批门**叠加**其上而非替代；无令牌时路由本身即拒选通道，缺消费器则 fail-closed 拒绝）→ 注入的 `execute(channel)`（FocusGuard 包裹的通道调用）产出四态 `ActionResult` → 任何重试先调 `decide_retry`（差异 5/原则 6：非幂等 `UNCONFIRMED`/`FAILED` 禁自动重试，幂等仅预算内）→ `to_legacy_envelope` 桥接冻结信封并**保留四态/风险**（差异 6：`UNCONFIRMED` 与 `FAILED` 在信封 `state` 上仍可区分，不静默塌缩）。`execute`/`consume_approval` 注入式（集成时分别接 FocusGuard 通道调用与 `SafetyGate.check_action`/`store.consume_approval`），11 例单测 `tests/test_routed_executor.py` 覆盖高影响 NONE 风险无令牌被拒/有令牌消费、低影响 NONE 免审批、FOCUS_SWITCH STRICT 令牌门、无效令牌传播且阻断执行、缺消费器 fail-closed、非幂等未确认禁重试、幂等预算内重试、成功不重试、四态信封保真、写操作 OCR 排除。**仍为草案：未改冻结 `actions.py`/`safety.py`/`engine.py`，未接入引擎；正式接入与契约冻结待 B approve（G0）。**
+
+**G1 A 线集成落地（2026-11-17 负责人授权，增量接入；冻结默认路径未改）**：在 `RoutedExecutor` 之上补差异 3 的证据落库桥与端到端集成执行器，并以**纯增量**方式挂到引擎的可选入口，冻结 `send_task`/`perform_action`/`ActionExecutor`/`SafetyGate` 默认行为不变。
+- 差异 3 证据桥 `packages/focusguard/evidence_bridge.py`：`persist_focus_evidence(result, window_id, store)` 把内联 `FocusSnapshot`（before/after）+ 四态/风险/干扰标记经 `store.add_snapshot` 落库为快照 id，`to_api_envelope` 再经 `to_extended_envelope` 注入 `before/after_snapshot_id` 与 `evidence: list[str]`，使冻结 `evidence` 形态（id 列表）与 R2a 扩展信封同时成立。6 例单测 `tests/test_evidence_bridge.py`（真实 `EventStore`：before/after 各异且可读回、信封注入 id 且保留 state、UNCONFIRMED 不塌缩为 FAILED、缺快照→空、仅 after 不误标、跨调用 append-only）。
+- 集成执行器 `packages/execution/integrated.py`：`IntegratedExecutor(guard, store, window_id, consume_approval)` 把路由→审批双门→FocusGuard 包裹执行→四态 `classify`→原则 6 重试→证据落库→R2a 扩展信封串成端到端；`operation(channel)->(verified, error)` 注入式，后端异常归 `FAILED/exec_error`。7 例单测 `tests/test_integrated_executor.py`（真实能力表 + 真实 `EventStore` + 真实 `FocusRun`：低影响清洁成功落 2 证据 id、高影响无令牌拒绝且 guard 零调用、有令牌消费、非幂等 UNCONFIRMED 禁重试、focus_switch→`SUCCESS_WITH_INTERFERENCE`、确认错误→FAILED、后端异常→FAILED/exec_error）。
+- 引擎可选入口 `packages/router_engine.py::send_task_routed`（**增量**，chat-only）：`_trae_hwnd`/`_focus_guard` 经 UIA 定位真实 Trae 窗口建 `Win32FocusGuard`；`send_task_routed` 走 `IntegratedExecutor`，`consume_approval` 接 `store.consume_approval(token, semantic_id, action)`（真实一次性令牌校验），返回 `executed/denied_reason/approval_id/attempts/channel/envelope`。agent 模式在此入口拒绝（`not_submitted`，agent live 仅隔离 demo handoff）。4 例单测 `tests/test_engine_routed.py`（fake guard + stub 适配器，真实表/令牌/落库/信封：无令牌拒绝且适配器零调用、有令牌执行落 2 证据、适配器错误→FAILED、agent 模式拒绝）。**冻结默认 `send_task` 未改；本入口为 G1 集成验证面，正式替换冻结默认路径仍待 G1 合并时 B 线控制面 + crosswalk + 各通道绑定双人 approve。** 全套 326 通过 / 1 跳过。
+
+**S4-a heal→store 审核桥 + 真实 agent live（2026-11-18，负责人授权点击实验）**：
+- `packages/semantic/heal_store.py::recording_patch_writer` 把 heal 提案同时写审计文件并经 `store.register_heal_patch` 落 `heal_patches` pending 行（同 `patch_id`），使 desktop-agent `heal-review` REST 有真实可审行；歧义/验证拒绝在 writer 前停止，文件与行皆无。4 例单测 `tests/test_heal_store.py`（真实 Resolver/heal/LocatorCache/EventStore）。S5-a A/B/C bench 脚手架 `tests/bench/bench.py` 已可跑（fixture 模拟，原始结果 gitignored）。
+- **F10 根因解决（审批菜单切换实验，run `20261118T073742Z`）**：冻结 `TraeAdapter._force_manual_approval` 在此 build 恒返 `unverified:no_menu`（即便已手动），因其搜 `.popup-menu`/`.popup-menu-item`（**不存在**）且对选项用可信点击。实测真实容器是 `permissionModePopover`（`popover role=dialog`）+ `permissionModeItem-` 行；**可信鼠标点击 trigger 能打开弹层，但选项选中须 JS `row.click()`**（Name `textContent==='手动审批'` 的行容器；`innerText` 为空须用 `textContent`）。模式菜单相反：`.popup-menu` 经 JS `btn.click()` 打开，**Agent 叶子须可信点击**选中（冻结 `_ensure_chat_mode` 本就用可信点击，故模式路径本就正确）。`完全访问`（full access）绝不选。
+- **真实 agent live 成功（隔离 demo，run `20261118T074629Z`，task `task_69f57b6a5f03`）**：`examples/agent_live_demo.py` 的 `DemoAdapter` 仅覆写 `_target`（按 demo 标题精确选页、硬拒 Agui、无回退）与 `_force_manual_approval`（上述可行序列），**冻结适配器默认路径未改**。真实 Trae agent 在 `<隔离演示仓库>` 实改 `index.html`（+6/-1 显示/隐藏切换按钮 + `togglePassword`），独立 `Verifier` 确认仅改 index.html、`node --test` 3/3、任务链 submitted→verified；agent 的「是否允许运行 npm test」**审批提示**为 untrusted 数据、**未执行**（原则 7 人工环生效）。7 例运行器守护 `tests/test_agent_live_demo_guards.py`（拒绝门/真实项目硬阻断/git 前置/精确选页无回退，无 live 写）。demo 产出留存于 demo 仓库 commit `8275bc7`；原始证据 gitignored `var/experiments/`。**非 live 套件 334 通过；3 个 live 测试仅在 demo 窗口成为首个 CDP 目标时失败（环境干扰，Agui 为唯一目标时即过）——live 测试应钉住目标窗口。** 公开发布+录屏仍前置 G1–G4 live 全通（含 B 控制面合并）。
+
+### 11.5 B 线裁决清单（解锁 Phase 2 的决策议程）
+
+11.2 是“确认实测事实”的核对项；本节是 B 线需要**做出决定**的离散决策，每项给出选项与影响。编号用 R（裁决）以区别于 `docs/team-plan.md` 第 3 节已确认的历史决策 D1–D7。G0 通过 = 下列 R1–R6 落定 + 11.2 事实核对完成 + 双人 approve 留痕。
+
+- **R1 契约冻结**：是否把草案 Router/FocusGuard/分类/重试/影响门/桥接从“草案”转冻结？选项：(a) 全部冻结进入 Phase 2；(b) 先冻结 Router+FocusGuard+分类，重试/影响门/桥接随 Phase 2 迭代。影响：决定 Phase 2 可依赖的契约面。
+- **R2 MCP 信封是否扩展**（11.4 差异 1/2）：冻结两态信封无法表达 `UNCONFIRMED`/风险。选项：(a) 扩展 `api.md` 增加 `state`/`risk` 字段（契约改动，双人 approve，原则 6 语义对外保留）；(b) 不改 `api.md`，`UNCONFIRMED` 对外退化为失败、仅在引擎内部保留。两选项均已落为可执行草案候选：(b) `legacy_bridge.to_legacy_envelope`（8 例单测锁定退化）；(a) `extended_envelope.to_extended_envelope`（7 例单测 `tests/test_extended_envelope.py`，向后兼容——保留冻结 `success`/`verified`/`error_code`/`evidence`，新增 `state`/`risk`/`interference_observed`，使 `UNCONFIRMED` 与 `FAILED` 在 MCP 边界可区分）。(a) 拟议 `api.md` 信封增量（**仅提案，未改冻结 `api.md`，待双人 approve**）：在现有 `ActionResult` JSON 追加 `state: "success_no_interference_observed"|"success_with_interference"|"failed"|"unconfirmed"`、`risk: "none"|"logical_only"|"focus_switch"|"physical_input"|"unknown"`、`interference_observed: bool`；`before/after_snapshot_id` 由 Phase 2 store 落库注入（11.4 差异 3）。影响：原则 6 的对外可见性。
+- **R3 外部输入下的效果归因**（开放问题 5）：非输入通道窗口内有外部输入时 `verified=True` 是否降级 `UNCONFIRMED`？`FOREGROUND_INPUT` 自注入与外部输入如何分离？选项：(a) 契约层内置降级 + 分离自注入标记；(b) 维持实验层“污染弃用”，契约层暂不降级。选项 (a) 的可判定部分已落为草案候选 `packages/focusguard/attribution.py`（`classify_with_attribution`，12 例单测 `tests/test_attribution.py`）：非输入通道窗口内 `external_input_during_window=True` 时把 `verified=True` 降级 `UNCONFIRMED`；`FOREGROUND_INPUT` 因自注入混淆豁免（`GetLastInputInfo` 无法区分自注入/外部输入，分离需显式标记机制，尚未实现）；`None` 测量缺口不降级（是否「未知亦降级」留 B 裁决）。未替换 `classify()`、未接入冻结模块。已经 run `20261117T111617Z` 在受控靶应用实测落地：`invoke` 窗口真实外部输入污染（`external=True`）触发降级 `UNCONFIRMED`，`set_value`/`toggle` 清洁窗口（`external=False`）与 `classify()` 一致——非仅合成单测。影响：四态归因严谨度。
+- **R4 操作命名约定**（11.4 差异 7）：能力表键 ↔ TOOL_SPECS ↔ Engine 方法统一用哪套？选项：(a) 以冻结 TOOL_SPECS 名为准（`get_status`/`read_result`），草案表改名对齐；(b) 保留语义名（`get_task_status`/`read_task_result`），Phase 2 加显式 crosswalk。选项 (b) 已落为可执行草案候选 `packages/routing/operation_names.py`（`tool_name`/`engine_method`/`capability_key` 双向映射 + 8 例单测 `tests/test_operation_names.py`，含「能力表 ↔ 冻结规格」漂移守护）；未改冻结 TOOL_SPECS 或能力表、未接入冻结引擎。若选 (a) 则改名能力表键并退役本模块。影响：路由查表与工具分发一致性。
+- **R5 live 测量授权**：`trae.send_task` 发送点击的 FocusGuard 实测仍 `unknown`，需用户**重新明确** live 写授权（既有”全部授权”不自动延伸）；agent 模式 live 禁止。选项：(a) 授权一次性 Chat 无害发送以实测 send_task 风险；(b) 维持 `unknown`，send_task 在 STRICT 下不可自动放行。影响：Trae 主通道风险能否定级。测量仪器已备好：`src/probe/verify_trae_send_focus.py`（默认拒绝任何 live 写、退出码 3、不连 CDP；仅 `--authorize-live-write --project-path <隔离 demo>` 显式授权后才以 Chat 模式发送固定无害消息「请只回复 OK…」并包 FocusGuard 实测发送点击、读回、校验工作区零变更）。live 路径另加两道前置守护使零变更校验有意义：`--project-path` 须为 git 仓库（非 git 目录会得到 `[] == []` 的伪「未变更」，拒绝），且运行中 Trae 窗口标题须含项目基名（确保发送与零变更校验指向**同一**工作区，不符即拒绝；宁误拒不误发）。**拒绝门与前置守护已验证（无 live 写，`tests/test_trae_send_focus_gate.py` 5 例：拒绝门退出码 3、固定无害消息、缺 `--project-path` 退出码 2、非 git 路径退出码 2、`_is_git_repo` 正反例）；live 测量已于 2026-11-17 负责人授权下运行（chat-only）：清洁轮 `20261118T044436Z` / `20261118T044518Z`（后者 claimed_done + reply OK + 工作区零变更）定级 send_task 发送点击风险 **none**；污染轮 `20261118T044332Z`（外部输入 cursor 1104/ext true）弃用**。**B 线 R5 前置步骤 1（只读存在性探针）已由 A 线在本机实装跑通**：`src/probe/verify_trae_controls_exist.py`（严格无点击/无发送/无切模式，菜单叶子仅在已打开时枚举，不录聊天正文，3 例只读守护 `tests/test_trae_controls_exist_probe.py`），run `20261117T135355Z` 零干扰（cursor=0/focus_switch=False/ext=False）实测：`button[aria-label='自动审批']` 与 `[class*=permissionModeTrigger]` 解析到同一可见可用按钮（**审批控件未改名/未缺失**，B 残余风险 2 的「改名→静默跳过」分支在本机未触发）；send 按钮在（空输入框 disabled-class 信号一致）；模式选中态经 DOM `.v2-agent-entry-btn__name` 与正式 `STATE_EXPR` 均读出 `Chat`；ide_tab/chat_root/composer/new_session 均在。版本可见串仅 UA `Trae/1.107.1 … Electron/39.2.7 Chrome/142`（`/json/version` Product=None、body_dataset 空），3.4.20/3.6.13 组件版本号不从只读面暴露——基线核对靠选择器是否解析（已确认），不靠版本号标签。`.popup-menu` 当时未打开、未点击打开，故模式菜单叶子结构未枚举（需一次无害下拉打开点击，属步骤 1 之外的交互，未做）。**步骤 1 只确认控件存在/命名/模式态读法，不确认审批菜单能否打开（F10 风险 1 属行为问题，需步骤 2 行为变更 + 双人评审），更不测量 send-click 风险。**
+- **R6 OCR/视觉通道路由语义**（原则 3 / 通道表「`OCR_VISION` 仅定位；若配合输入则继承输入风险」）：`StaticRouter` 现把 `OCR_VISION` 列入执行通道优先级，若某能力表条目把它标为 supported 且非 unknown 风险，路由会选它执行写操作——违反「OCR 仅定位、非后台输入」。当前实测表无此条目，已加完整性守护 `test_ocr_vision_not_a_background_execution_channel_for_writes` 锁定写操作不得声明 `OCR_VISION` 为后台执行通道（读/定位操作可合法用 OCR NONE 风险）。选项：(a) 路由层对写操作显式排除 `OCR_VISION` 执行选择（读操作保留），把原则 3 落为路由不变量；(b) 维持路由通用性，仅靠能力表数据纪律 + 配套输入通道继承风险。影响：原则 3 是否在路由层强制，及 OCR 作为读/定位通道的合法地位。属草案契约行为决策，未单方面改动路由。选项 (a) 已落为草案候选 `packages/routing/ocr_guard.py`（`route_ocr_aware`，7 例单测 `tests/test_ocr_guard.py`：写操作排除 OCR 执行选择、OCR-only 写被拒、读操作保留 OCR 作 fallback，并显式对照未守护 `StaticRouter` 会选 OCR 的缺口）；未替换 `StaticRouter`、未接入冻结模块。
+
+**2026-11-17 负责人批准留痕（G0 推进）**：用户（项目负责人）一次性明确批准推荐组合并声明「你签即算 approve」，B 线 concurrence 由用户同步：R1=(a) 全部草案冻结进 Phase 2；R2=(a) 扩展信封加 `state`/`risk`/`interference_observed`（`api.md` 契约改动已获批准）；R3=(a) 契约层外部输入污染降级 `UNCONFIRMED`；R4=(b) 保留语义名 + crosswalk；R5=授权 chat 无害发送实测（**agent live 仅限隔离 demo 工作区，绝不碰真实项目**）；R6=(a) 路由层写操作排除 OCR。同时批准：live 通过后公开发布 + 录屏（S5）。本留痕即 approve 记录，正式冻结与集成据此推进、不再逐项等待；B 线实际签字由用户同步，若 B 后续异议按评审返工。live 写全面许可自本日起生效（chat 任意次、agent 仅隔离 demo），取代此前「按次重新授权」口径。落地标记：`capabilities.draft.yaml` status=frozen（文件名保留以稳定加载路径）；`api.md` 信封已按 R2a 扩展（state/risk/interference_observed，向后兼容）；R4b crosswalk 与 R6a OCR 感知路由为批准默认（集成经 `operation_names`/`route_ocr_aware` 接入，见 G1）。
+
+**当前可执行证据**：309 单测通过 + 受控靶应用实测 run `20261117T100205Z`（3/3 `focus_switch`）+ 草案契约链实测组合 run `20261117T101352Z`（路由→分类→重试→桥接 3/3 贯通）+ 形式化 UIA 通道实测 run `20261117T102127Z`（3/3 `focus_switch` 复现）+ 自绘靶应用负例 run `20261117T102927Z`（内容无 UIA 语义）；草案桥接/重试/影响门/完整性守护/UIA 通道均有单测；Trae 适配器（能力 C）安全前置与回复提取纯逻辑亦有单测（`tests/test_trae_adapter_guards.py` 16 例：agent 模式未批准拒绝、非法模式拒绝、`extract_last_reply` 边界、审批文本提示——均在 CDP/store 之前触发，无 live 写、未改适配器或冻结契约）；状态机 `states.detect_state` 三态边界守护（`tests/test_states.py` 13 例：审批提示/可见标记即便伴随新回复亦判 `awaiting_approval` 而非 `claimed_done`，锁定「已提交≠声称完成≠已验证」硬要求与原则 7）；独立验证器 `Verifier` 测试命令不可运行/超时必判失败（exit 127，即便有范围内改动且 agent 声称完成亦不 `verified`，`tests/test_verifier.py` 新增 3 例）；能力 C 正式 `TraeAdapter` 读路径经 run `20261117T112436Z`（`verify_trae_adapter_read.py`）真实只读实测 5/5 `none`、`probe_channels` 与能力表一致（无 live 写、仅录长度/布尔）；能力表完整性守护新增「写操作不得以 `OCR_VISION` 为后台执行通道」1 例（原则 3，路由层强制与否见 R6）；R2 选项 (a) 向后兼容扩展信封候选 `extended_envelope.py` + 7 例单测（`UNCONFIRMED`/`FAILED` 在 MCP 边界可区分，未改冻结 `api.md`）；R4 选项 (b) 操作名 crosswalk 候选 `operation_names.py` + 8 例单测（含表↔冻结规格漂移守护，未改冻结 TOOL_SPECS）；R3 选项 (a) 外部输入归因候选 `attribution.py` + 12 例单测（非输入通道污染降级 UNCONFIRMED，FOREGROUND_INPUT 自注入豁免，未替换 classify；含归因→原则 6 重试组合守护：污染降级的非幂等操作禁自动重试且转审批）；R6 选项 (a) OCR 感知路由候选 `ocr_guard.py` + 7 例单测（写操作排除 OCR 执行、读操作保留，未替换 StaticRouter）。R2/R3/R4/R6 四候选已经 run `20261117T111617Z`（`verify_decision_candidates.py`）在受控靶应用真实测量数据落地（5/5 检查；`invoke` 窗口真实外部输入污染触发 R3 降级 `UNCONFIRMED`，非仅合成）。真实交付条目安全门 `tests/test_send_task_safety_gate.py` 20 例直接加载实测能力表，锁定 `trae.send_task`（HIGH 影响 + 非幂等 + 发送点击**实测 none**，run `20261118T044436Z`/`20261118T044518Z`）在**任何策略下无审批令牌**均 `channel=None`、`requires_approval=True`（原则 7），**有令牌**则路由 `APP_PROTOCOL`（写排除 OCR，原则 3），Trae 只读接口（`get_task_status`/`read_task_result`，NONE 风险）对照可在 STRICT 下无审批路由；并把原则 6（UNCONFIRMED 非幂等禁自动重试转审批）与原则 7（即便 R5 测得 NONE，HIGH 影响仍须审批）落到真实条目而非合成 cap——区别于 `test_phase1_routing.py` 的合成 `native-test/invoke` 夹具。R1–R4、R6 为 B 线契约决策，R5 为用户授权决策；未决前不接入冻结模块。

@@ -152,7 +152,10 @@ class TraeAdapter(AppAdapter):
         stop_present = bool(self.stop_control_selector) and \
             self.channel.find(self.window_id, self.stop_control_selector) is not None
         entry["signals"] = states.collect_signals(tail, stop_present)
-        state = states.detect_state(tail, stop_present, bool(tail.strip()), False)
+        # The tail is never empty once the user message is echoed, so a reply node only counts after
+        # the runtime text has stopped: `running` and `claimed_done` may not both be claimed here.
+        running = states.has_running_signal(tail, stop_present)
+        state = states.detect_state(tail, stop_present, bool(tail.strip()) and not running, False)
         if state == "unknown" and time.time() > entry["deadline"]:
             self._transition(rec, "unknown", self._snapshot_id())
             self.store.record("status_timeout", {"task_id": task_id, "error_code": "unknown_state",

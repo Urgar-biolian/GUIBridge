@@ -97,12 +97,15 @@ def test_high_impact_action_succeeds_once_a_human_grants_it(plane, grant_approva
     assert plane.channel.approval_mode == "manual"
 
 
-def test_every_attempt_writes_an_audit_row(plane):
+def test_every_attempt_writes_one_audit_row(plane):
+    """One row per attempt, whatever the outcome: the failure kinds the lanes drafted separately
+    are the same event with `success: false`."""
     plane.executor.perform(plane.window_id, "trae.chat.nope", "click")
     row = [e for e in plane.store.events(kind="action")][-1]
     assert row["semantic_id"] == "trae.chat.nope"
     assert row["payload"]["success"] is False
     assert row["payload"]["error_code"] == "locator_missing"
+    assert plane.store.events(kind="action_failed") == []
 
 
 def test_snapshots_record_the_elements_they_observed(plane):
@@ -125,3 +128,63 @@ def test_the_action_event_carries_its_own_before_and_after_evidence(plane):
                                                                    result.after_snapshot_id]
     assert after["element_count"] == len(plane.store.get_snapshot(after["snapshot_id"])["elements"])
     assert after["image_path"] is None  # simulated channel captures no pixels; the UI must not imply it did
+
+
+# The perception lane drives the same executor through injected coroutines instead of a live
+# channel: an async resolver, an `actor` callable, and a snapshotter that only describes the window.
+
+
+class _AsyncResolver:
+    def __init__(self, element=None, exc=None):
+        self.element = element
+        self.exc = exc
+        self.calls = 0
+
+    async def resolve(self, window_id, semantic_id):
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        return self.element
+
+
+def _injected_executor(store, resolver, actor=lambda *a: True, allowed={"w"}):
+    from execution.actions import ActionExecutor
+    from execution.safety import SafetyGate
+    # The snapshots the injected backend writes belong to a window, and windows is the identity table.
+    store.register_window("w", "Trae.exe", "Agui - TRAE", {})
+    return ActionExecutor(resolver, SafetyGate(allowed, approvals=store), store,
+                          snapshotter=lambda wid: {"summary": ["x"]}, actor=actor)
+
+
+def test_injected_backend_records_the_same_evidence(store):
+    executor = _injected_executor(store, _AsyncResolver(_element("w", {"cdp_selector": ".x"})))
+    result = executor.perform("w", "sid", "click")
+    assert result.success and result.before_snapshot_id and result.after_snapshot_id
+    event = store.events_after()[-1]
+    assert event["kind"] == "action" and event["payload"]["calibrated"] is False
+    assert [entry["element_count"] for entry in event["payload"]["snapshots"]] == [1, 1]
+
+
+def test_injected_backend_reports_a_missing_locator(store):
+    from semantic.resolver import LocatorMissing
+    executor = _injected_executor(store, _AsyncResolver(exc=LocatorMissing("gone")))
+    result = executor.perform("w", "sid", "click")
+    assert result.success is False and result.error_code == "locator_missing"
+    assert store.events_after()[-1]["payload"]["success"] is False
+
+
+def test_injected_backend_blocks_a_gated_action_before_acting(store):
+    calls = []
+    executor = _injected_executor(store, _AsyncResolver(_element("w", {"cdp_selector": ".x"})),
+                                  actor=lambda *a: calls.append(1) or True)
+    result = executor.perform("w", APPROVAL, "click")
+    assert result.success is False and result.error_code == "approval_required"
+    assert calls == []
+
+
+def test_a_refused_action_carries_a_code(store):
+    """api.md: `error_code` is mandatory whenever success is false, including a quiet backend refusal."""
+    executor = _injected_executor(store, _AsyncResolver(_element("w", {"cdp_selector": ".x"})),
+                                  actor=lambda *a: False)
+    result = executor.perform("w", "sid", "click")
+    assert result.success is False and result.error_code == "not_submitted"
