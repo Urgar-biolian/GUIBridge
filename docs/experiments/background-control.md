@@ -428,3 +428,34 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 ### 17.4 隔离阶梯（综合）
 
 应用自身协议（CDP，最轻最干净，实测 Trae 读/发送 `none`）→ **隐藏桌面（同内核、主机零干扰、窗口不可见、只能新开实例，E8 实测）** → 独立会话/VM/WSL2（最干净最重、独立内核、只能新开实例）。写执行通道本身的风险仍须按 应用×控件×操作×消息 逐组合实测（第 15 节）；隔离容器只把干扰关起来，不改变操作语义可用性。
+
+## 18. 真实应用隐藏桌面可控实测（E9，`experiment_real_app_hidden.py`，run `20261119T111418Z` 权威 / `20261119T111018Z` 首跑）
+
+动机：第 16 节隐藏桌面隔离只对**自建** GDI 靶应用验证。本节用**真实 Windows 系统应用**检验隔离 + UIA 语义 + 截图是否泛化。方法：`CreateProcessW(STARTUPINFO.lpDesktop="WinSta0\\<隐藏桌面>")` 启动 benign 系统应用**全新实例**，隐藏桌面工作线程枚举窗口/读 UIA 树/`PrintWindow` 截图/对经典编辑控件做**一次可逆 `WM_SETTEXT`（不保存文件）**，主机 FocusGuard 测干扰；测完终止自建实例。**范围**：仅字符映射表/记事本/计算器，不碰用户现有窗口、不保存、不破坏、不动 Trae/微信 live。
+
+### 18.1 结果矩阵
+
+| 真实应用 | 类型 | 认隐藏桌面? | 主机干扰 | UIA 语义 | PrintWindow | 可逆写入 | 判定 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **字符映射表 charmap** | 经典 Win32 对话框 #32770 | 是（pid==启动 pid） | 无（主机新窗 0、前台不变） | **26 节点**：字符网格 Pane/复制字符 EditControl/选择·复制 Button/高级查看 CheckBox/字体 ComboBox | **成功** 572×536、3 非空白色 | RICHEDIT50W `WM_SETTEXT` ""→"GBProbe" 验证达成、光标 0、主机前台不切换 | **success_no_interference_observed** |
+| **记事本 notepad（新版）** | WinUI3 打包应用 | 窗口落隐藏桌面，但 **pid≠启动桩 pid** | 无（主机新窗 0、前台不变） | 65 节点（RichEdit→**DocumentControl** 非 EditControl，有 Button） | **成功** 915×1190 | RichEditD2DPT `WM_SETTEXT` 验证达成、主机零干扰 | success_no_interference_observed（**带会话恢复警告**） |
+| **计算器 calc** | UWP | **否** | **有**：弹到主机桌面（5 新窗）、抢前台 | — | — | — | **no_window_on_hidden_desktop（负例）** |
+
+### 18.2 核心结论
+
+1. **隔离泛化到真实经典 Win32 应用成立**：字符映射表（真实系统应用，非自建）在隐藏桌面上**完整暴露 UIA 语义树**（网格/编辑框/按钮/复选框/组合框）、**PrintWindow 可截图回读**、**可逆编辑写入效果达成且主机零干扰**。第 16 节结论不再限于自建靶应用。
+2. **UWP 应用无法用 `CreateProcess lpDesktop` 关进隐藏桌面**：计算器无视 lpDesktop，经 shell/RuntimeBroker 激活到**主机默认桌面**并抢前台（负例）。探针已加 `_clean_host_popups`：检测到主机新窗即对匹配应用窗口发 `WM_CLOSE` 优雅关闭（**绝不终止共享 ApplicationFrameHost 进程**），本轮自动关闭了「计算器」ApplicationFrameWindow。
+3. **打包单实例应用 ≠ 干净全新实例**：新版记事本单实例 + 会话恢复，启动后恢复了指向 `D:\GitHub\_analyze_out.txt` 的标签并弹「找不到文件」对话框（**均在隐藏桌面、主机零干扰**），且真实窗口 pid 与启动桩 pid 不同。可逆写入虽验证成功，但**会复用/恢复用户会话状态**，不适合做「干净隔离全新实例」的可控测试；可控测试应优先经典多实例应用（如 charmap）。
+
+### 18.3 匹配器教训（首跑假阴性）
+
+应用 pid 会派生大量 TSF/IME/提示辅助窗（`Touch Tooltip Window`、`CiceroUIWndFrame`、`CicLoaderWndClass`、`Default IME`、`MSCTFIME UI`、`UAC_InputIndicatorOverlayWnd`、`ComboLBox`、`GDI+ Hook Window Class`）。首跑 `20261119T111018Z` 的 `_match_window` 取 pid 第一个带标题窗口，误选 charmap 的「Tooltip」辅助窗 ⇒ UIA 0 节点、截图 1×1 假阴性。修正：排除辅助类/标题、**优选可见主窗口**（`_is_main_window`），charmap 正确匹配「字符映射表」#32770 后得 26 节点干净正例。注：`UAC_InputIndicatorOverlayWnd` 是 TSF 输入指示器_overlay_，**非 UAC 提权提示**，无提权。
+
+### 18.4 限制与清理核实
+
+- 仅 benign 系统应用、可逆写入（无保存）；真实 Electron/自绘/微信在隐藏桌面的 UIA+渲染**仍未验证**（各有独立 live 约束，不在本轮）。
+- PrintWindow 已对经典 GDI 对话框（charmap）与 WinUI3（新版记事本）验证成功；DirectX/硬件加速/全屏窗口可能渲染空白，未验证。
+- `closedesktop_ok=false` 为**关闭时序假象**（CloseDesktop 调用时应用窗口尚在关闭）；核实：探针退出后隐藏桌面名已销毁（`OpenDesktop` lasterr=2 ERROR_FILE_NOT_FOUND）、主机无计算器/字符映射残留窗、`tasklist` 无 charmap/calculator/notepad 进程。首跑计算器主机弹窗已手动 `WM_CLOSE` 关闭，重跑由探针自动关闭。
+- 每应用样本小；焦点判定轮询+钩子并集，<2 ms 盲区见第 12 节。
+- provisional 隔离标签 `hidden_desktop`，**未改冻结 Channel 枚举**；纳入能力表与逐应用风险定级需 B 评审 + owner approve。
+- 复跑命令：`python -X utf8 src/probe/experiment_real_app_hidden.py [charmap] [notepad] [calc]`（不带参数测全部；可控测试建议仅 `charmap`）。
