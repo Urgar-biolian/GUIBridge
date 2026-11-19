@@ -721,3 +721,17 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 
 - **结论**：PostMessage 坐标点击通道在**高频（2000 次/6s）与持续（8000 次/约 1 分钟）**下均**零丢失**、计数单调递增无停滞、主机前台/光标**全程零位移**、桌面句柄正常释放（`closedesktop_ok=true`）。无 SendInput、无 SwitchDesktop。
 - **边界**：benign 自绘靶（自有按钮 + 标题计数），证**通道稳定性**，非微信/Trae 真实应用压测；真实应用写仍逐次授权 + 手动审批。原始 JSON 入 gitignored `var/experiments/<run_id>/`。
+
+## 27. Trae 隐藏桌面第二实例可行性（`experiment_trae_hidden.py` + `cdp_port_read.mjs`，只读探针）
+
+面向「用户工作时独立运行的 AI 编程工作台」愿景的可行性实测。以**独立 `--user-data-dir`**（全新空 profile，repo 外、gitignored、用后即删）+ **不同 `--remote-debugging-port=9333`** 在隐藏桌面 `CreateProcessW(si.lpDesktop)` 启动第二 Trae 实例，**不触碰主机 profile/单实例锁**。主机 Trae：`D:\Program\Trae\Trae.exe`、profile `AppData\Roaming\Trae`、端口 9222、Electron 39.2.7。
+
+| run | 启动 | 隐藏主窗 | CDP 9333 | 主机前台变 | 光标位移 | 主机新增 Trae 窗 | verdict |
+|---|---|---|---|---|---|---|---|
+| `20261119T161740Z` | ok | 未等到（CDP 先就绪即 break，已修） | **可达** | false | 0 | false | partial（测量 gap） |
+| `20261119T161817Z` | ok | **Chrome_WidgetWin_1 1250×850 @(655,295)** | **可达** | false | **0** | **false** | **hidden_trae_feasible** |
+
+- **结论（实测 verified）**：第二 Trae 实例可**完整启动于隐藏桌面**（真实主窗、打开了隔离 demo 工程 `D:\QoderTest\guibridge-demo-workspace`），**CDP loopback 跨桌面可达**（loopback 与活动桌面无关），**主机零干扰**（前台不变、光标零位移、主机 Trae 窗数不增——单实例锁未转发到主机）。只读 `Runtime.evaluate` 成功读到 DOM。
+- **边界（如实）**：全新 profile **未登录/停在首跑 `setup.html`**（`hasChatRoot=false`、`chatLen=0`、`bodyLen=0`）。故「agent 给 Trae 发开发任务→读回复」的**完整链尚未通**：需在隐藏实例完成首跑设置 + 登录（第二 Trae 账户），chat root 出现后现有 `TraeAdapter(port=9333)` 方可 `send_task`/`read_result`。本探针**只读**：未发信、未点 send、未切模式、未输入凭据；登录与写动作须另行授权（agent 模式 live 仅限隔离 demo + 手动审批）。
+- **清理**：仅 `taskkill /T /F` 本探针自启的第二实例树（pid 与主机不同），`CloseDesktop` true，profile 目录用后即删；主机 Trae（90232 等）全程完整。
+- **契约影响**：隐藏桌面 Trae 通道若纳入正式适配器/能力表，属契约数据变更，须提案 + **双人 approve**；本探针不改契约。
