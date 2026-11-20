@@ -23,9 +23,10 @@ python -X utf8 tools/license_audit.py
   `tqdm`（`MPL-2.0 AND MIT`，经可选 extra `rapidocr-onnxruntime`）。
   义务限于「被修改的 MPL 文件须以 MPL 提供源码 + 保留声明」；我们未修改这两个包，随发行版附带其 LICENSE 即可。
 - `unicode-ident` 为 `(MIT OR Apache-2.0) AND Unicode-3.0`：Unicode-3.0 是宽松数据许可证，保留声明即可。
-- **本项目自身尚未声明许可证**：无 LICENSE 文件、`pyproject.toml` 无 license 字段、
-  `src/probe/gbmirror/Cargo.toml` 无 license（审计表中 `gbmirror` 行即 UNRESOLVED）。
-  这是提交前必须由用户决定的事项，**未擅自添加**。
+- **本项目许可证已选定 MIT**（2026-11-20 用户裁决）：新增 `LICENSE`（MIT，Copyright (c) 2026 GUIBridge contributors）、
+  `pyproject.toml` 加 `license = {text = "MIT"}`（本机 setuptools 75.1.0，SPDX 字符串形式需 ≥77，故用 table 形式）、
+  `src/probe/gbmirror/Cargo.toml` 加 `license = "MIT"`。重跑审计后 `gbmirror` 行已解析为 MIT，不再 UNRESOLVED。
+  与依赖侧兼容：MIT 与 Apache-2.0 单向兼容（Apache 声明保留即可），与 MPL-2.0 文件级义务不冲突。
 
 ## 2. 本次已修
 
@@ -34,6 +35,7 @@ python -X utf8 tools/license_audit.py
 | 硬编码本机用户名 | `src/probe/trae_session_clone.py:33` 原为 `C:\Users\56407\AppData\Roaming\Trae` | 改 `Path(os.environ["APPDATA"]) / "Trae"` |
 | Pillow 被入库代码使用但未声明 | `src/probe/gbdash.py:519`、`src/probe/hidden_mirror.py:28` | `pyproject.toml` dependencies 增 `pillow>=10.0` |
 | 探针日志入库 | `src/probe/cli_chat.log`（7 字节 `EXIT=0`） | `git rm --cached`（本地文件保留）+ `.gitignore` 增 `*.log` |
+| 本项目未声明许可证 | 无 LICENSE / pyproject 无 license / Cargo 无 license | 用户选定 MIT，三处均已声明 |
 | 基准原始记录被 ignore 挡住 | `.gitignore` 的 `tests/bench/results/` 与 benchmark.md「每次运行生成新文件，均入库」矛盾 | 改 `tests/bench/results/*` + `!tests/bench/results/*.json` |
 
 ## 3. 未修，交付前需处理（如实标注）
@@ -63,7 +65,7 @@ python -X utf8 tools/license_audit.py
 
 ## 5. 明细表（脚本生成）
 
-原始记录：`var/experiments/license_audit_20261120T130710Z.json`
+原始记录：`var/experiments/license_audit_20261120T132201Z.json`
 
 ### Python
 
@@ -131,7 +133,7 @@ python -X utf8 tools/license_audit.py
 
 | name | version | license |
 |---|---|---|
-| gbmirror | 0.1.0 | UNRESOLVED |
+| gbmirror | 0.1.0 | MIT |
 | itoa | 1.0.18 | MIT OR Apache-2.0 |
 | memchr | 2.8.1 | Unlicense OR MIT |
 | proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
@@ -214,7 +216,7 @@ python -X utf8 tools/license_audit.py
 ### tallies
 
 python {'Apache 2.0': 2, 'MIT License': 5, 'MIT': 23, 'BSD-3-Clause': 10, 'MIT-CMU': 1, 'Apache-2.0': 2, 'PSF-2.0': 1, 'PSF': 1, 'UNRESOLVED': 1, 'BSD 3-Clause': 1, 'MPL-2.0 AND MIT': 1, 'Apache Software License': 1, 'BSD-2-Clause': 1, 'BSD License': 1, 'MIT OR Apache-2.0': 1, 'MPL-2.0': 1, '3-Clause BSD License': 1, 'BSD': 3}
-cargo {'UNRESOLVED': 1, 'MIT OR Apache-2.0': 20, 'Unlicense OR MIT': 1, '(MIT OR Apache-2.0) AND Unicode-3.0': 1, 'MIT': 1}
+cargo {'MIT': 2, 'MIT OR Apache-2.0': 20, 'Unlicense OR MIT': 1, '(MIT OR Apache-2.0) AND Unicode-3.0': 1}
 npm {'MIT': 45, 'BSD-2-Clause': 1, 'ISC': 2, 'BSD-3-Clause': 1, 'Apache-2.0': 1}
 
 ### flagged (unresolved / not installed / non-permissive prefix)
@@ -224,7 +226,6 @@ npm {'MIT': 45, 'BSD-2-Clause': 1, 'ISC': 2, 'BSD-3-Clause': 1, 'Apache-2.0': 1}
 | opencv-python | None | UNRESOLVED | not-installed |
 | tqdm | 4.66.5 | MPL-2.0 AND MIT | License |
 | certifi | 2026.5.20 | MPL-2.0 | License |
-| gbmirror | 0.1.0 | UNRESOLVED | cargo metadata |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | cargo metadata |
 
 ## 6. 边界

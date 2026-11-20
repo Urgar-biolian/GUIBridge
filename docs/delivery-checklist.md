@@ -8,9 +8,9 @@
 
 | 门 | 状态 | 卡在哪 |
 |---|---|---|
-| G1（11/20） | A 侧就绪，已推送至 `a3b5736` | B 的 `integrate/g1` + `9804c69` **不在本机仓库**，无法代码级复核；等 B 接到最新 A 线后推，再按六条勿动路径 + 非默认接线复核 |
+| G1（11/20） | **未过**：A 侧就绪（`65a5b23`）；B 侧远端与报告不一致，见 §7 | B 推的是 `feat/b-control-plane`（`b25aa3e..2d130af`，8 提交），**远端没有 `integrate/g1`，`9804c69` 不存在**；且 B 分支基于旧 main、不含 A 线任何工作 |
 | G2–G4（11/23–27） | 未开始 | 需 B 补控制面 live 通道（`perception.cdp.CDPChannel` → `adapters.base.Channel`）+ 默认替换的双人 approve + 用户逐次 live 授权 |
-| G5（11/30） | 未开始 | 前置 G1–G4 live 全通；站点/录屏对外可见需用户确认；**本项目许可证尚未选定** |
+| G5（11/30） | 未开始 | 前置 G1–G4 live 全通；站点/录屏对外可见需用户确认；许可证已定 MIT（2026-11-20） |
 
 ## 2. 不越门、现在就能做（A 线）
 
@@ -52,19 +52,47 @@
 
 ## 5. 提交检查
 
-已完成（`a3b5736`）：许可证审计（57 Python / 24 crate / 50 npm 全宽松，两处 MPL-2.0 文件级弱 copyleft）、
+已完成（`a3b5736` + MIT 声明）：许可证审计（57 Python / 24 crate / 50 npm 全宽松，两处 MPL-2.0 文件级弱 copyleft）、
+**本项目选定 MIT**（`LICENSE` + `pyproject.toml` `license = {text = "MIT"}` + `gbmirror/Cargo.toml` `license = "MIT"`）、
 硬编码用户名改走 `APPDATA`、Pillow 补进依赖声明、探针日志移出索引 + `*.log` 忽略、
 基准原始记录不再被 ignore 挡住、无凭据/无二进制入库。
 
 待做：
-- **本项目许可证未选定**（无 LICENSE 文件、`pyproject.toml` 无 license 字段、`gbmirror/Cargo.toml` 无 license）——用户决策
 - 干净 venv + 锁文件复跑一次非 live 套件（本机是 conda + 用户 site 混合环境，存在同名多版本 dist-info）
 - OCR extra 在干净环境按 `opencv-python` 安装后重跑审计（本机由 headless/用户 site 的 cv2 满足）
 - 公开站点不得包含本机执行器、调试端口转发、`var/experiments` 证据目录（handoff §5 G5 前置）
 
-## 6. 需用户决策（两项）
+## 6. 需用户决策
 
-1. **许可证**：参赛交付用 MIT / Apache-2.0 / 其他 / 仅提交评审不开源。定了就加 LICENSE + pyproject/Cargo 字段。
-2. **Phase 2 live 授权范围**：
+1. ~~许可证~~ → **已定 MIT**（2026-11-20），三处声明已落地。
+2. **Phase 2 live 授权范围**（仍待定）：
    - 最小范围：只跑 #1/#2/#6 只读项 → 镜头 1–5、7 可拍，镜头 6 复用已有 run 证据；
    - 完整范围：另授权 #4（需先写窗口移动重复发送探针）与 #5 重跑（隔离 demo）→ 镜头 6 重拍、S4 live 验收补齐。
+
+## 7. B 线远端复核（2026-11-20，`git fetch` 后实测）
+
+远端只有三条分支：`feat/a-perception`（`65a5b23`）、`feat/b-control-plane`（`2d130af`）、`main`（`b25aa3e`）。
+**没有 `integrate/g1`；`git cat-file -t 9804c69` 返回 not a valid object name。**
+
+B 新推的 8 个提交（`b25aa3e..2d130af`）：`c72f5b8` S2、`a7bb349` S3、`53d66e2` S4-b、`ce9e60a` S5-b、
+`b179be5` docs、`7497e55` R1–R6 裁决、`b99babc` fix(adapter)、`2d130af` docs；55 文件 / +6621 −82。
+
+与报告不一致的三点（均可复算）：
+
+1. **F10 弹层修复不在远端**。`git grep permissionModePopover|permissionModeItem|is_allowed_approval_target`
+   在 B 全树 **0 命中**；`packages/adapters/trae/states.py` 只有 `approval_state()` 读 trigger 标签
+   （manual/auto/unreadable/absent），`locators.yaml` 的 `trae.chat.approval_mode` 链仍只指向 trigger
+   （`button[aria-label='自动审批']` / `[class*=permissionModeTrigger]`），没有弹层行选择器。
+   即 `b99babc`「把审批模式当证据读」**不等于**报告里「切到手动审批」的修复；F10 根因在远端版本仍存在。
+2. **B 分支不含 A 线任何工作**。`merge-base(A,B) = b25aa3e = main`，`--is-ancestor A B` 为 NO。
+   B 树里没有 `routing` / `focusguard` / `integrated` / `routed_executor`，MCP 仍是 `packages/mcp/server.py`
+   （A 线已是 `packages/mcp_gateway/server.py`），也没有 `src/probe` 镜像/gbdash 与 research 文档。
+3. **合并是真冲突，不是 fast-forward**。相对 main，B 改了 `packages/execution/actions.py`、
+   `packages/execution/safety.py`（handoff §2.5 六条勿动路径中的两条），A 也改了这两条 + `docs/api.md` + MCP 路径；
+   两边还都改了 `pyproject.toml`（B 加 `httpx>=0.27` 到 dev extra，A 加 `pillow>=10.0` 到 dependencies，这两处可自动合并）。
+   B 的 `docs/` 是另一套文件名（`architecture.md` / `review-r1-r6.md` / `dev-status.md`），与 A 的
+   `architecture/guibridge-design.md` / `research/*` 并存，需要人工决定归并方式。
+
+结论：**G1 未过**。需要 B 确认到底推了什么（报告中的 `9804c69`/`integrate/g1` 与远端不符），
+并把分支接到最新 A 线、解决 `packages/mcp` vs `packages/mcp_gateway` 的结构分歧与两条 execution 冻结文件的冲突，
+再按六条勿动路径 + 非默认接线复核。A 线不擅自合并、不改对方分支、不替换默认路径。
