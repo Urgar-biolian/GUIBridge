@@ -135,13 +135,17 @@ def test_page_localized_keeps_ids_enums_and_offline():
     for eid in ("sessions", "mirror", "cap", "props", "events", "evcount", "filter",
                 "limit", "reload", "snapsess", "privwrap", "confirm", "snap",
                 "snapmeta", "snapimg", "ts", "auto",
-                "mirroropen", "mirrorclose", "mirrorwidth", "mirrorfps", "mirroract"):
+                "mirroropen", "mirrorclose", "mirrorwidth", "mirrorfps", "mirroract",
+                "livesess", "livefps", "livewidth", "livestart", "livestop",
+                "livepriv", "liveconfirm", "livemeta", "livewrap", "liveimg"):
         assert f'id="{eid}"' in page, eid
     for zh in ("保活会话", "镜像 / 录制", "能力表与待评审提案", "按需快照",
                "应用", "操作", "影响", "幂等", "通道（实测风险）", "证据",
                "光标位移", "外部输入", "检出率", "已运行", "调试端口",
                "无干扰", "有干扰", "未确认", "微信快照含私聊画面",
-               "打开镜像窗口", "关闭镜像窗口", "主机可见动作"):
+               "打开镜像窗口", "关闭镜像窗口", "主机可见动作",
+               "实时镜像（web）", "开始实时画面", "微信实时画面含私聊内容",
+               "未做归因", "不写磁盘"):
         assert zh in page, zh
     # raw enums stay visible as technical identifiers (legend / options / tooltips)
     for raw in gd.FOUR_STATES | {"focus_switch", "physical_input", "unknown", "none"}:
@@ -214,3 +218,194 @@ def test_open_mirror_requires_built_exe(monkeypatch, tmp_path):
     monkeypatch.setattr(gd, "GBMIRROR_EXE", tmp_path / "missing.exe")
     body, code = gd.open_mirror()
     assert code == 500 and body["error"] == "gbmirror.exe not built"
+
+
+# ---------------------------------------------------------------- live web mirror (no capture)
+
+class _ShortReader:
+    """Pipe stand-in that returns at most `chunk` bytes per read (Windows short reads)."""
+
+    def __init__(self, data, chunk=3):
+        self.data, self.chunk, self.pos = data, chunk, 0
+
+    def read(self, n):
+        out = self.data[self.pos:self.pos + min(n, self.chunk)]
+        self.pos += len(out)
+        return out
+
+
+def test_read_exact_reassembles_short_reads_and_stops_at_eof():
+    payload = bytes(range(256)) * 4
+    assert gd._read_exact(_ShortReader(payload, chunk=7), len(payload)) == payload
+    assert gd._read_exact(_ShortReader(b"abc", chunk=1), 10) == b"abc"
+    assert gd._read_exact(_ShortReader(b"", chunk=1), 4) == b""
+
+
+def test_live_gate_privacy_liveness_and_exe(monkeypatch, tmp_path):
+    import hidden_sessions
+
+    exe = tmp_path / "gbmirror.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(gd, "GBMIRROR_EXE", exe)
+    rec = {"name": "wechat", "kind": "wechat", "desktop": "GBWeChatKeepAlive", "pid": 1, "alive": True}
+    monkeypatch.setattr(hidden_sessions, "get_session", lambda name: rec if name == "wechat" else None)
+
+    body, code = gd.live_gate("wechat", False)[1]
+    assert code == 403 and "live view exposes private chats" in body["error"]
+    assert gd.live_gate("wechat", True)[1] is None
+    assert gd.live_gate("nope", False)[1][1] == 404
+
+    dead = dict(rec, alive=False)
+    monkeypatch.setattr(hidden_sessions, "get_session", lambda name: dead)
+    assert gd.live_gate("wechat", True)[1][1] == 409
+
+    monkeypatch.setattr(hidden_sessions, "get_session", lambda name: rec)
+    monkeypatch.setattr(gd, "GBMIRROR_EXE", tmp_path / "missing.exe")
+    assert gd.live_gate("wechat", True)[1][1] == 500
+
+
+def test_live_hub_clamps_stream_params():
+    rec = {"desktop": "GBTraeKeepAlive", "pid": 7, "kind": "trae"}
+    hub = gd.LiveHub("trae", rec, fps=999, width=99999, quality=200)
+    assert (hub.fps, hub.width, hub.quality) == (30, 2560, 95)
+    low = gd.LiveHub("trae", rec, fps=0, width=1, quality=1)
+    assert (low.fps, low.width, low.quality) == (1, 320, 30)
+    assert hub.dead() is True  # never started: no subprocess
+    hub.acquire(); hub.acquire(); hub.release()
+    assert hub.viewers == 1 and hub.status()["seq"] == 0
+
+
+class _StubHub:
+    def __init__(self, session="trae", dead=False, viewers=0, idle=0.0):
+        self.session, self._dead, self.viewers = session, dead, viewers
+        self.last_view = time.time() - idle
+        self.stopped = False
+
+    def dead(self):
+        return self._dead
+
+    def shutdown(self):
+        self.stopped = True
+
+
+def test_live_hub_replaces_a_dead_stream(monkeypatch):
+    monkeypatch.setattr(gd, "live_gate", lambda s, c: ({"desktop": "D", "pid": 1, "kind": "trae"}, None))
+    made = []
+
+    class Fresh(_StubHub):
+        def __init__(self, session, rec, fps, width, quality):
+            super().__init__(session)
+            made.append(self)
+
+        def start(self):
+            pass
+
+    old = _StubHub(dead=True)
+    monkeypatch.setattr(gd, "LIVE", {"trae": old})
+    monkeypatch.setattr(gd, "LiveHub", Fresh)
+    hub, err = gd.live_hub("trae", False)
+    assert err is None and hub is made[0] and old.stopped is True
+    assert gd.LIVE["trae"] is hub
+
+
+def test_live_hub_caps_concurrent_streams(monkeypatch):
+    monkeypatch.setattr(gd, "live_gate", lambda s, c: ({"desktop": "D", "pid": 1, "kind": "trae"}, None))
+    monkeypatch.setattr(gd, "LiveHub", _StubHub)
+    monkeypatch.setattr(gd, "LIVE", {"trae": _StubHub("trae"), "wechat": _StubHub("wechat")})
+    hub, err = gd.live_hub("third", False)
+    assert hub is None and err[1] == 429 and "too many live streams" in err[0]["error"]
+    assert len(gd.LIVE) == gd.LIVE_MAX_HUBS
+
+
+def test_live_stop_and_status_without_a_stream(monkeypatch):
+    monkeypatch.setattr(gd, "LIVE", {})
+    assert gd.live_status("trae")["running"] is False
+    body, code = gd.live_stop("trae")
+    assert code == 409 and body["error"] == "live stream not running"
+    hub = _StubHub()
+    monkeypatch.setattr(gd, "LIVE", {"trae": hub})
+    body, code = gd.live_stop("trae")
+    assert code == 200 and body["stopped"] is True and hub.stopped is True
+    assert gd.LIVE == {}
+
+
+def test_live_reap_once_stops_only_unwatched_idle_streams(monkeypatch):
+    watched = _StubHub(viewers=1, idle=999)
+    idle = _StubHub(viewers=0, idle=gd.LIVE_IDLE_S + 1)
+    fresh = _StubHub(viewers=0, idle=0)
+    dead = _StubHub(dead=True, viewers=0, idle=0)
+    monkeypatch.setattr(gd, "LIVE", {"a": watched, "b": idle, "c": fresh, "d": dead})
+    assert gd.live_reap_once() == 2
+    assert watched.stopped is False and fresh.stopped is False
+    assert idle.stopped is True and dead.stopped is True
+    assert set(gd.LIVE) == {"a", "c"}
+
+
+class _FakeSock:
+    def __init__(self, fail_after=None):
+        self.buf, self.writes, self.fail_after = bytearray(), 0, fail_after
+
+    def write(self, b):
+        if self.fail_after is not None and self.writes >= self.fail_after:
+            raise BrokenPipeError("viewer closed the tab")
+        self.writes += 1
+        self.buf += b
+
+    def flush(self):
+        pass
+
+
+class _FakeHandler:
+    def __init__(self, sock):
+        self.wfile, self.headers, self.close_connection = sock, {}, False
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, k, v):
+        self.headers[k] = v
+
+    def end_headers(self):
+        pass
+
+
+class _FrameHub:
+    def __init__(self, frames):
+        self.frames, self.viewers, self.touches = frames, 0, 0
+        self.stop = gd.threading.Event()
+
+    def acquire(self):
+        self.viewers += 1
+
+    def release(self):
+        self.viewers -= 1
+
+    def touch(self):
+        self.touches += 1
+
+    def next_frame(self, last, timeout=2.0):
+        if last < len(self.frames):
+            return last + 1, self.frames[last], False
+        self.stop.set()
+        return last, None, True
+
+
+def test_stream_live_writes_mjpeg_parts_and_releases_viewer():
+    hub = _FrameHub([b"\xff\xd8frame-one\xff\xd9", b"\xff\xd8frame-two\xff\xd9"])
+    sock = _FakeSock()
+    h = _FakeHandler(sock)
+    gd.Handler._stream_live(h, hub)
+    assert h.code == 200 and h.close_connection is True
+    assert h.headers["Content-Type"] == f"multipart/x-mixed-replace; boundary={gd.LIVE_BOUNDARY}"
+    body = bytes(sock.buf)
+    assert body.count(b"--gbframe\r\nContent-Type: image/jpeg\r\n") == 2
+    assert b"X-GB-Seq: 1" in body and b"X-GB-Seq: 2" in body
+    assert b"frame-one" in body and b"frame-two" in body
+    assert hub.viewers == 0 and hub.touches == 2  # released even after normal eof
+
+
+def test_stream_live_survives_a_disconnected_viewer():
+    hub = _FrameHub([b"jpeg-a", b"jpeg-b"])
+    h = _FakeHandler(_FakeSock(fail_after=2))
+    gd.Handler._stream_live(h, hub)  # must not raise
+    assert hub.viewers == 0

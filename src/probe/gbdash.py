@@ -4,13 +4,17 @@ A single-file stdlib HTTP server + embedded single-page UI that aggregates the E
 probe artefacts into one management/observation view. Observation is read-only: it never
 writes to the engine, the frozen capability table, or any keep-alive session. Side effects
 are limited to (a) reading files, (b) an on-demand one-frame hidden-desktop snapshot via
-`gbmirror --desktop` (read-only, zero-interference, re-measured per call), and (c) an
-EXPLICIT user-clicked open/close of the native mirror window (`POST /api/mirror/open|close`).
-(c) is host-visible -- a real window appears on the user's desktop and may take the
-foreground -- so its host impact is measured and reported, never claimed to be zero, and
-closing refuses any target whose image is not gbmirror.exe. WeChat snapshots expose private
-chats and therefore require an explicit confirm flag; the BMP is deleted right after it
-is read into the response so nothing readable persists on disk.
+`gbmirror --desktop` (read-only, zero-interference, re-measured per call), (c) an
+EXPLICIT user-clicked open/close of the native mirror window (`POST /api/mirror/open|close`),
+and (d) an EXPLICIT user-clicked live view (`GET /api/live`) that pipes `gbmirror --stream`
+frames to the browser as MJPEG. (c) is host-visible -- a real window appears on the user's
+desktop and may take the foreground -- so its host impact is measured and reported, never
+claimed to be zero, and closing refuses any target whose image is not gbmirror.exe. (d)
+injects no input and writes no image to disk; its rolling host-activity counters include the
+viewer's own mouse/app use and are labelled unattributed, so the strict zero-interference
+claim stays with (b). WeChat snapshots AND live view expose private chats and therefore
+require an explicit confirm flag; the snapshot BMP is deleted right after it is read into
+the response so nothing readable persists on disk.
 
 Data sources (all read-only):
   * sessions   -> hidden_sessions.list_sessions() (live pid re-check)
@@ -151,10 +155,10 @@ def mirror_status(path=STATUS_PATH, now=None):
     return d
 
 
-def snapshot_gate(kind, confirm):
+def snapshot_gate(kind, confirm, what="snapshot"):
     """WeChat renders private chats; only an explicit confirm may pull it."""
     if kind == "wechat" and not confirm:
-        return False, "wechat snapshot exposes private chats; explicit confirm required"
+        return False, f"wechat {what} exposes private chats; explicit confirm required"
     return True, ""
 
 
@@ -451,6 +455,229 @@ def close_mirror(timeout_s=4.0):
                 "graceful": n > 0 and not forced, "closed": closed}, (200 if closed else 500)
 
 
+# ---------------------------------------------------------------- live web mirror (MJPEG)
+#
+# One `gbmirror --stream` subprocess per session, started lazily when a viewer opens the live
+# panel and reaped after LIVE_IDLE_S without viewers. Frames travel through a pipe only: no
+# readable image ever touches disk. gbmirror's rolling host-activity counters are NOT attributed
+# (the viewer's own mouse/foreground use counts too), so the UI labels them as host activity
+# rather than interference caused by the capture; the strict zero-interference claim stays on
+# the single-frame snapshot path, which is measured in a controlled window.
+
+LIVE_LOCK = threading.Lock()
+LIVE: dict = {}
+LIVE_IDLE_S = 8.0
+LIVE_MAX_HUBS = 2
+LIVE_BOUNDARY = "gbframe"
+
+
+def _read_exact(f, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = f.read(n - len(buf))
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+
+class LiveHub:
+    def __init__(self, session, rec, fps=10, width=1280, quality=70):
+        self.session = session
+        self.desktop = rec["desktop"]
+        self.pid = rec["pid"]
+        self.kind = rec.get("kind")
+        self.fps = max(1, min(30, int(fps)))
+        self.width = max(320, min(2560, int(width)))
+        self.quality = max(30, min(95, int(quality)))
+        self.proc = None
+        self.lock = threading.Lock()
+        self.cond = threading.Condition(self.lock)
+        self.jpeg = None
+        self.dims = None
+        self.seq = 0
+        self.meta = {}
+        self.error = None
+        self.eof = False
+        self.viewers = 0
+        self.last_view = time.time()
+        self.started = time.time()
+        self.stop = threading.Event()
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            [str(GBMIRROR_EXE), "--desktop", self.desktop, "--pid", str(self.pid),
+             "--stream", "--frames", "0", "--width", str(self.width), "--fps", str(self.fps)],
+            cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        threading.Thread(target=self._read_frames, daemon=True).start()
+        threading.Thread(target=self._read_meta, daemon=True).start()
+
+    def _read_frames(self):
+        import io
+
+        from PIL import Image
+
+        f = self.proc.stdout
+        while not self.stop.is_set():
+            hdr = _read_exact(f, 4)
+            if len(hdr) < 4:
+                break
+            n = int.from_bytes(hdr, "little")
+            if not 0 < n <= 64 * 1024 * 1024:
+                break
+            payload = _read_exact(f, n)
+            if len(payload) < n:
+                break
+            try:
+                im = Image.open(io.BytesIO(payload)).convert("RGB")
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=self.quality)
+                data, dims = buf.getvalue(), (im.width, im.height)
+            except Exception as exc:
+                with self.lock:
+                    self.error = repr(exc)
+                continue
+            with self.cond:
+                self.jpeg, self.dims = data, dims
+                self.seq += 1
+                self.cond.notify_all()
+        with self.cond:
+            self.eof = True
+            self.cond.notify_all()
+
+    def _read_meta(self):
+        for line in self.proc.stderr:
+            try:
+                d = json.loads(line.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            with self.lock:
+                self.meta = d
+
+    def next_frame(self, last_seq, timeout=2.0):
+        with self.cond:
+            end = time.monotonic() + timeout
+            while self.seq == last_seq and not self.eof and not self.stop.is_set():
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                self.cond.wait(left)
+            return self.seq, self.jpeg, self.eof
+
+    def acquire(self):
+        with self.lock:
+            self.viewers += 1
+            self.last_view = time.time()
+
+    def release(self):
+        with self.lock:
+            self.viewers = max(0, self.viewers - 1)
+            self.last_view = time.time()
+
+    def touch(self):
+        with self.lock:
+            self.last_view = time.time()
+
+    def dead(self):
+        return self.eof or self.proc is None or self.proc.poll() is not None
+
+    def status(self):
+        with self.lock:
+            return {
+                "session": self.session, "kind": self.kind, "running": not self.dead(),
+                "seq": self.seq, "dims": self.dims, "viewers": self.viewers,
+                "fps_req": self.fps, "width": self.width, "quality": self.quality,
+                "uptime_s": round(time.time() - self.started, 1),
+                "idle_s": round(time.time() - self.last_view, 1),
+                "error": self.error, "meta": dict(self.meta),
+            }
+
+    def shutdown(self):
+        self.stop.set()
+        p = self.proc
+        if p is not None and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        with self.cond:
+            self.eof = True
+            self.cond.notify_all()
+
+
+def live_gate(session, confirm):
+    import hidden_sessions
+
+    rec = hidden_sessions.get_session(session)
+    if not rec:
+        return None, ({"ok": False, "error": f"unknown session {session}"}, 404)
+    ok, reason = snapshot_gate(rec.get("kind"), confirm, "live view")
+    if not ok:
+        return None, ({"ok": False, "error": reason}, 403)
+    if not rec.get("alive"):
+        return None, ({"ok": False, "error": "session not alive"}, 409)
+    if not GBMIRROR_EXE.exists():
+        return None, ({"ok": False, "error": "gbmirror.exe not built"}, 500)
+    return rec, None
+
+
+def live_hub(session, confirm, fps=10, width=1280, quality=70):
+    rec, err = live_gate(session, confirm)
+    if err:
+        return None, err
+    with LIVE_LOCK:
+        hub = LIVE.get(session)
+        if hub is not None and hub.dead():
+            hub.shutdown()
+            LIVE.pop(session, None)
+            hub = None
+        if hub is None:
+            if len(LIVE) >= LIVE_MAX_HUBS:
+                return None, ({"ok": False, "error": "too many live streams; stop one first"}, 429)
+            hub = LiveHub(session, rec, fps, width, quality)
+            try:
+                hub.start()
+            except OSError as exc:
+                return None, ({"ok": False, "error": repr(exc)}, 500)
+            LIVE[session] = hub
+        return hub, None
+
+
+def live_status(session):
+    with LIVE_LOCK:
+        hub = LIVE.get(session)
+    return hub.status() if hub else {"session": session, "running": False, "seq": 0}
+
+
+def live_stop(session):
+    with LIVE_LOCK:
+        hub = LIVE.pop(session, None)
+    if hub is None:
+        return {"ok": False, "error": "live stream not running"}, 409
+    hub.shutdown()
+    return {"ok": True, "session": session, "stopped": True}, 200
+
+
+def live_reap_once():
+    doomed = []
+    with LIVE_LOCK:
+        for name, hub in list(LIVE.items()):
+            if hub.viewers == 0 and (hub.dead() or time.time() - hub.last_view > LIVE_IDLE_S):
+                doomed.append(hub)
+                LIVE.pop(name, None)
+    for hub in doomed:  # terminate outside the lock: wait() can take seconds
+        hub.shutdown()
+    return len(doomed)
+
+
+def live_reap(interval_s=2.0):
+    while True:
+        time.sleep(interval_s)
+        live_reap_once()
+
+
 # ---------------------------------------------------------------- http server
 
 class Handler(BaseHTTPRequestHandler):
@@ -469,6 +696,36 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(raw)
+
+    def _stream_live(self, hub):
+        hub.acquire()
+        self.close_connection = True
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={LIVE_BOUNDARY}")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            last = 0
+            while not hub.stop.is_set():
+                seq, jpeg, eof = hub.next_frame(last, timeout=2.0)
+                if jpeg is not None and seq != last:
+                    last = seq
+                    head = (
+                        f"--{LIVE_BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
+                        f"Content-Length: {len(jpeg)}\r\nX-GB-Seq: {seq}\r\n\r\n"
+                    ).encode("ascii")
+                    self.wfile.write(head)
+                    self.wfile.write(jpeg)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                    hub.touch()
+                if eof or hub.stop.is_set():
+                    break
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass  # viewer navigated away / closed the tab
+        finally:
+            hub.release()
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -492,6 +749,23 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/snapshot":
                 body, code = take_snapshot(q.get("session", "trae"), q.get("confirm") == "1")
                 self._send(code, body)
+            elif path == "/api/live/check":
+                rec, err = live_gate(q.get("session", "trae"), q.get("confirm") == "1")
+                if err:
+                    self._send(err[1], err[0])
+                else:
+                    self._send(200, {"ok": True, "session": rec.get("name"), "kind": rec.get("kind")})
+            elif path == "/api/live/status":
+                self._send(200, live_status(q.get("session", "trae")))
+            elif path == "/api/live":
+                hub, err = live_hub(
+                    q.get("session", "trae"), q.get("confirm") == "1",
+                    q.get("fps", 10), q.get("width", 1280), q.get("quality", 70),
+                )
+                if err:
+                    self._send(err[1], err[0])
+                else:
+                    self._stream_live(hub)
             else:
                 self._send(404, {"ok": False, "error": "not found"})
         except Exception as exc:  # surface as json, never crash the loop
@@ -511,6 +785,8 @@ class Handler(BaseHTTPRequestHandler):
                 body, code = open_mirror(q.get("width", 1400), q.get("fps", 30))
             elif u.path == "/api/mirror/close":
                 body, code = close_mirror()
+            elif u.path == "/api/live/stop":
+                body, code = live_stop(q.get("session", "trae"))
             else:
                 body, code = {"ok": False, "error": "not found"}, 404
             self._send(code, body)
@@ -769,12 +1045,30 @@ footer .sep{width:1px;height:12px;background:var(--line2)}
     <div class="note" id="mirroract">打开镜像窗口是<b>主机可见动作</b>：会在你的桌面弹出真实窗口、可能切换前台，影响按实测显示。关闭仅针对 gbmirror.exe，绝不触碰保活会话。</div>
   </section>
   <section class="panel" style="--i:2">
-    <div class="phead"><span class="idx">03</span><h2>能力表与待评审提案</h2><span class="hint">冻结契约 · 风险按实测声明</span></div>
+    <div class="phead"><span class="idx">03</span><h2>实时镜像（web）</h2><span class="hint">管道帧流 · 不落盘 · 无人观看自动停</span></div>
+    <div class="row">
+      <select id="livesess" aria-label="实时镜像会话"></select>
+      <select id="livefps" aria-label="实时帧率">
+        <option value="5">5 帧/秒</option><option value="10" selected>10 帧/秒</option><option value="15">15 帧/秒</option>
+      </select>
+      <select id="livewidth" aria-label="实时画面宽度">
+        <option value="960">宽 960</option><option value="1280" selected>宽 1280</option><option value="1600">宽 1600</option>
+      </select>
+      <button id="livestart" class="primary">开始实时画面</button>
+      <button id="livestop" disabled>停止</button>
+      <label class="priv" id="livepriv" hidden><input type="checkbox" id="liveconfirm"> 我确认查看微信私聊画面</label>
+    </div>
+    <div class="capbar" id="livemeta">未开始。画面只在浏览器内传输、不写磁盘；无人观看 8 秒后自动停流。</div>
+    <div class="snapframe" id="livewrap" hidden><img class="snap" id="liveimg" alt="隐藏桌面实时画面"></div>
+    <div class="note">主机活动计数是<b>近 2 秒滚动窗口</b>（前台切换 / 光标位移），<b>含你自己的鼠标与窗口操作、未做归因</b>，不等于「捕获造成干扰」；严格零干扰判定请用下方单帧快照。实时画面与原生镜像窗口同时开启会翻倍占用捕获开销。</div>
+  </section>
+  <section class="panel" style="--i:3">
+    <div class="phead"><span class="idx">04</span><h2>能力表与待评审提案</h2><span class="hint">冻结契约 · 风险按实测声明</span></div>
     <div class="scroll"><table id="cap"></table></div>
     <div class="note" id="props"></div>
   </section>
-  <section class="panel" style="--i:3">
-    <div class="phead"><span class="idx">04</span><h2>FocusGuard 事件流</h2><span class="hint">四态判定 · 事件钩子证据</span></div>
+  <section class="panel" style="--i:4">
+    <div class="phead"><span class="idx">05</span><h2>FocusGuard 事件流</h2><span class="hint">四态判定 · 事件钩子证据</span></div>
     <div class="row">
       <select id="filter" aria-label="按状态筛选">
         <option value="">全部状态</option>
@@ -804,8 +1098,8 @@ footer .sep{width:1px;height:12px;background:var(--line2)}
       <div class="note">干扰判定以 <b>SetWinEventHook 前台事件</b> 为准；2ms 轮询存在理论盲区，外部输入污染的运行弃用但保留原始文件。</div>
     </details>
   </section>
-  <section class="panel" style="--i:4">
-    <div class="phead"><span class="idx">05</span><h2>按需快照</h2><span class="hint">单帧只读 · 每次调用重测零干扰</span></div>
+  <section class="panel" style="--i:5">
+    <div class="phead"><span class="idx">06</span><h2>按需快照</h2><span class="hint">单帧只读 · 每次调用重测零干扰</span></div>
     <div class="row">
       <select id="snapsess" aria-label="选择会话"></select>
       <label class="priv" id="privwrap" hidden><input type="checkbox" id="confirm"> 我确认查看微信私聊画面</label>
@@ -835,6 +1129,7 @@ const STATE={
 const RISK={none:'无干扰',focus_switch:'焦点切换',physical_input:'物理输入',logical_only:'仅逻辑',unknown:'未测量'};
 const KIND={wechat:'微信',trae:'Trae'};
 const ERR_ZH=[
+ [/wechat live view exposes private chats/i,'微信实时画面含私聊内容，请先勾选「我确认查看微信私聊画面」'],
  [/wechat snapshot exposes private chats/i,'微信快照含私聊画面，请先勾选「我确认查看微信私聊画面」'],
  [/session not alive/i,'会话已退出，无法抓取快照'],
  [/unknown session/i,'未知会话'],
@@ -842,6 +1137,8 @@ const ERR_ZH=[
  [/capture produced no bmp/i,'截图未生成 BMP'],
  [/mirror window not running/i,'镜像窗口未在运行'],
  [/refuse to close/i,'拒绝关闭：目标进程不是 gbmirror.exe（保活会话受保护）'],
+ [/too many live streams/i,'实时流已达上限（2 路），请先停止一路'],
+ [/live stream not running/i,'该会话没有正在运行的实时流'],
  [/not found/i,'接口不存在']
 ];
 const zhErr=m=>{for(const pair of ERR_ZH)if(pair[0].test(m))return pair[1];return m;};
@@ -868,7 +1165,7 @@ async function loadSessions(){const d=await j('/api/sessions');SESSIONS=d.sessio
  const sel=$('snapsess');const cur=sel.value;
  sel.innerHTML=d.sessions.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}${s.alive?'':'（已退出）'}</option>`).join('');
  if(cur&&d.sessions.some(s=>s.name===cur))sel.value=cur; else if(d.sessions.some(s=>s.name==='trae'))sel.value='trae';
- syncPriv();}
+ syncPriv();liveFill();}
 function syncPriv(){const s=SESSIONS.find(x=>x.name===$('snapsess').value);
  $('privwrap').hidden=!(s&&s.kind==='wechat'); if($('privwrap').hidden)$('confirm').checked=false;}
 async function loadMirror(){const m=await j('/api/mirror');
@@ -907,6 +1204,39 @@ async function mirrorCtl(action){
   }
   loadMirror();
  }catch(e){act.textContent='失败：'+zhErr(e.message);act.title=e.message;}}
+let LIVE_ON=false,LIVE_TIMER=null;
+function liveSyncPriv(){const s=SESSIONS.find(x=>x.name===$('livesess').value);
+ $('livepriv').hidden=!(s&&s.kind==='wechat'); if($('livepriv').hidden)$('liveconfirm').checked=false;}
+function liveFill(){const sel=$('livesess');const cur=sel.value;
+ sel.innerHTML=SESSIONS.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}${s.alive?'':'（已退出）'}</option>`).join('');
+ if(cur&&SESSIONS.some(s=>s.name===cur))sel.value=cur; else if(SESSIONS.some(s=>s.name==='trae'))sel.value='trae';
+ liveSyncPriv();}
+function liveUnlock(){LIVE_ON=false;clearInterval(LIVE_TIMER);
+ $('livestart').disabled=false;$('livestop').disabled=true;
+ $('livesess').disabled=false;$('livefps').disabled=false;$('livewidth').disabled=false;}
+async function liveStart(){
+ const s=$('livesess').value;const conf=$('liveconfirm').checked?1:0;
+ $('livemeta').textContent='正在检查会话与门控…';
+ try{
+  await j(`/api/live/check?session=${encodeURIComponent(s)}&confirm=${conf}`);
+  $('livemeta').textContent='正在启动帧流…';
+  const img=$('liveimg');
+  img.onerror=()=>{if(!LIVE_ON)return;$('livemeta').textContent='画面中断：帧流已结束或连接被关闭，可重新开始。';liveUnlock();};
+  img.src=`/api/live?session=${encodeURIComponent(s)}&confirm=${conf}&fps=${$('livefps').value}&width=${$('livewidth').value}&quality=70&t=${Date.now()}`;
+  $('livewrap').hidden=false;LIVE_ON=true;
+  $('livestart').disabled=true;$('livestop').disabled=false;
+  $('livesess').disabled=true;$('livefps').disabled=true;$('livewidth').disabled=true;
+  clearInterval(LIVE_TIMER);LIVE_TIMER=setInterval(liveStatus,1000);liveStatus();
+ }catch(e){$('livemeta').textContent='失败：'+zhErr(e.message);}}
+async function liveStop(){const s=$('livesess').value;liveUnlock();
+ $('liveimg').src='';$('livewrap').hidden=true;
+ try{await fetch('/api/live/stop?session='+encodeURIComponent(s),{method:'POST'});}catch(e){}
+ $('livemeta').textContent='已停止实时画面（帧流进程已终止）。';}
+async function liveStatus(){if(!LIVE_ON)return;const s=$('livesess').value;
+ try{const d=await j('/api/live/status?session='+encodeURIComponent(s));const m=d.meta||{};
+  $('livemeta').innerHTML=`${d.running?'<b>流运行中</b>':'流已结束'} · 帧序号 ${d.seq} · 画面 ${d.dims?d.dims[0]+'×'+d.dims[1]:'—'} · 实测 ${(m.fps||0).toFixed(1)} 帧/秒 · 捕获 ${(m.avg_capture_ms||0).toFixed(0)}ms · 观看者 ${d.viewers} · 近2s 主机前台切换 ${m.fg_switches??'—'} 次 / 光标位移 ${m.cursor_disp??'—'}px（含你的操作·未归因）${d.error?' · 错误 '+esc(d.error):''}`;
+  if(!d.running&&d.seq>0){$('livemeta').innerHTML+=' · 帧流已退出（会话可能已结束）';liveUnlock();}
+ }catch(e){$('livemeta').textContent='状态读取失败：'+zhErr(e.message);}}
 async function loadCap(){const c=await j('/api/capability');
  $('cap').innerHTML='<thead><tr><th>应用</th><th>操作</th><th>影响</th><th>幂等</th><th>通道（实测风险）</th><th>证据</th></tr></thead><tbody>'+
   c.entries.map(e=>`<tr><td class="num">${esc(e.app)}</td><td class="num">${esc(e.operation)}</td>
@@ -944,6 +1274,7 @@ async function refreshFast(){try{await Promise.all([loadSessions(),loadMirror()]
 $('reload').onclick=loadEvents;$('filter').onchange=renderEvents;$('limit').onchange=loadEvents;
 $('snap').onclick=snap;$('snapsess').onchange=syncPriv;
 $('mirroropen').onclick=()=>mirrorCtl('open');$('mirrorclose').onclick=()=>mirrorCtl('close');
+$('livestart').onclick=liveStart;$('livestop').onclick=liveStop;$('livesess').onchange=liveSyncPriv;
 loadCap();loadEvents();refreshFast();
 setInterval(()=>{if($('auto').checked)refreshFast();},3000);
 </script></body></html>
@@ -951,16 +1282,26 @@ setInterval(()=>{if($('auto').checked)refreshFast();},3000);
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="GUIBridge read-only localhost observation dashboard")
+    ap = argparse.ArgumentParser(
+        description="GUIBridge localhost observation dashboard (read-only) + explicit mirror-window control")
     ap.add_argument("--port", type=int, default=8710)
     args = ap.parse_args()
+    # physical-pixel cursor sampling, same as the probes (no DPI virtualization)
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"GUIBridge dashboard (read-only): http://127.0.0.1:{args.port}/")
+    srv.daemon_threads = True
+    threading.Thread(target=live_reap, daemon=True).start()
+    print(f"GUIBridge dashboard: http://127.0.0.1:{args.port}/  (observation read-only; "
+          f"mirror-window open/close and live view are explicit actions)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        with LIVE_LOCK:
+            for hub in LIVE.values():
+                hub.shutdown()
+            LIVE.clear()
         srv.server_close()
     return 0
 

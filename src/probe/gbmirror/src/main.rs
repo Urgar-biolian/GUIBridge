@@ -1,8 +1,11 @@
 //! gbmirror: hidden-desktop live mirror + (stage 4) hardware recorder, host zero-interference.
 //!
-//! Two modes:
+//! Three modes:
 //!   capture-only:  gbmirror --desktop NAME --pid PID --out FILE.bmp [--frames N]
 //!                  One-shot PrintWindow-stitch proof + host fg/cursor re-measurement.
+//!   pipe stream:   gbmirror --desktop NAME --pid PID --stream [--width N] [--fps N] [--frames 0]
+//!                  Length-prefixed BMP frames on stdout + per-second JSON meta on stderr,
+//!                  for the web dashboard's live MJPEG view. No files written.
 //!   mirror UI:     gbmirror [--registry PATH] [--width N] [--fps N]
 //!                  Host-visible window: session picker (left) + live hidden-desktop blit
 //!                  (right). Reads the registry exported by hidden_sessions.py.
@@ -14,6 +17,7 @@ mod capture;
 mod display;
 mod record;
 mod registry;
+mod stream;
 
 use capture::{capture_stitch, frame_stats, write_bmp, Frame};
 use std::mem::zeroed;
@@ -53,6 +57,8 @@ struct Args {
     pid: i64,
     out: String,
     frames: u32,
+    frames_set: bool,
+    stream: bool,
     registry: String,
     width: i32,
     fps: u32,
@@ -64,6 +70,8 @@ fn parse_args() -> Result<Args, String> {
         pid: 0,
         out: String::from("gbmirror.bmp"),
         frames: 5,
+        frames_set: false,
+        stream: false,
         registry: String::from("var/experiments/hidden_sessions.json"),
         width: 1000,
         fps: 30,
@@ -74,7 +82,11 @@ fn parse_args() -> Result<Args, String> {
             "--desktop" => a.desktop = Some(it.next().ok_or("--desktop needs a value")?),
             "--pid" => a.pid = it.next().ok_or("--pid needs a value")?.parse().map_err(|_| "bad pid")?,
             "--out" => a.out = it.next().ok_or("--out needs a value")?,
-            "--frames" => a.frames = it.next().ok_or("--frames needs a value")?.parse().map_err(|_| "bad frames")?,
+            "--frames" => {
+                a.frames = it.next().ok_or("--frames needs a value")?.parse().map_err(|_| "bad frames")?;
+                a.frames_set = true;
+            }
+            "--stream" => a.stream = true,
             "--registry" => a.registry = it.next().ok_or("--registry needs a value")?,
             "--width" => a.width = it.next().ok_or("--width needs a value")?.parse().map_err(|_| "bad width")?,
             "--fps" => a.fps = it.next().ok_or("--fps needs a value")?.parse().map_err(|_| "bad fps")?,
@@ -193,6 +205,22 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if args.stream {
+        let desktop = match args.desktop.clone() {
+            Some(d) => d,
+            None => {
+                eprintln!("ABORT: --stream needs --desktop");
+                std::process::exit(2);
+            }
+        };
+        std::process::exit(stream::run(&stream::StreamArgs {
+            desktop,
+            pid: args.pid,
+            width: args.width,
+            fps: args.fps,
+            frames: if args.frames_set { args.frames } else { 0 },
+        }));
+    }
     if args.desktop.is_some() {
         std::process::exit(capture_mode(&args));
     }
