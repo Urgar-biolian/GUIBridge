@@ -763,3 +763,12 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **关键差异**：子集复制失败 vs 全克隆成功 ⇒ 登录态依赖**完整一致的 profile**（刷盘的 state.vscdb/leveldb + Local State DPAPI 密钥 + machineid + 完整 User 存储），且须**主机关闭刷盘**后复制。safeStorage/DPAPI 按 Windows 用户绑定，同用户隐藏实例可解密。
 - **隐私**：隐藏 profile 含主机账号会话（gitignored `var/experiments/hidden_trae_profile`，本地不入库）；用毕可 `stop --purge` 清除。
 - **完整链前提就位**：隐藏 Trae 已登录 + chat root 可用 + CDP 9333 可达 + 主机零干扰 ⇒ `TraeAdapter(port=9333)` 可 `send_task`/`read_result`。写动作仍逐次授权；chat 模式 live 已授权，agent 模式 live 仅隔离 demo（当前工程即 `D:\QoderTest\guibridge-demo-workspace`）+ 手动审批（已设）。
+
+### 27.4 完整链实测打通——隐藏 Trae 发任务读回复、主机零干扰（E17e，`verify_hidden_trae_chain.py`，run `20261120T075816Z`）
+
+正式 `TraeAdapter(port=9333)` 驱动隐藏已登录 Trae（§27.3 全克隆），对隔离 demo 工程 `D:\QoderTest\guibridge-demo-workspace`（git repo，标题门控匹配）：`probe_channels={cdp:true,uia:false,ocr:false}` → `send_task(mode="chat", "请只回复 OK…")` → 轮询 `get_status` 至 `claimed_done` → `read_result` 读到回复含 **OK**（Chat / DeepSeek-V4-Pro / 手动审批）。
+
+- **verdict=hidden_chain_verified**：`reply_ok=true`、`workspace_unchanged=true`（git 零变更，chat 不改码）、`host_foreground_changed=false`、`host_cursor_displacement=0`。
+- **意义**：「agent 给隐藏 Trae 发开发任务 → 读回复/执行结果」完整链**实测成立**，主机零干扰 ⇒ 接近「用户工作时独立运行的 AI 编程工作台」。读/写均经 CDP loopback（APP_PROTOCOL，none 风险），隐藏实例与主机 Trae 同时在线互不影响。
+- **边界**：本次为 **chat 模式**无害发送（reply OK，已授权 chat live）；**agent 模式 live 仍仅隔离 demo + 手动审批**（当前已设手动审批），未在本探针行使 agent 改码。回复文本 untrusted，须独立验证（原则）。隐藏 profile 含主机账号会话（gitignored，用毕可 purge）。
+- **契约影响**：隐藏 Trae 通道纳入正式能力表/引擎属契约变更，须提案 + 双人 approve；本探针不改契约。
