@@ -30,7 +30,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 const GENERIC_ALL: u32 = 0x1000_0000;
 const PICKER_W: i32 = 230;
 const LINE_H: i32 = 30;
-const MIRROR_H: i32 = 430;
+const MIRROR_H: i32 = 600;
 const TIMER_PAINT: usize = 1;
 
 pub struct Shared {
@@ -299,11 +299,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         bmi.bmiHeader.biPlanes = 1;
                         bmi.bmiHeader.biBitCount = 32;
                         bmi.bmiHeader.biCompression = BI_RGB;
-                        let dw = st.mirror_w;
-                        let dh = ((sh as i64 * dw as i64) / sw as i64).max(1) as i32;
+                        // fit-within preserving source aspect (letterbox), never squash
+                        let scale = (st.mirror_w as f64 / sw as f64)
+                            .min(MIRROR_H as f64 / sh as f64);
+                        let dw = (sw as f64 * scale).max(1.0) as i32;
+                        let dh = (sh as f64 * scale).max(1.0) as i32;
                         StretchDIBits(
                             hdc,
-                            PICKER_W, 0, dw, dh.min(MIRROR_H),
+                            PICKER_W, 0, dw, dh,
                             sx, sy, sw, sh,
                             f.bgra.as_ptr() as *const _,
                             &bmi,
