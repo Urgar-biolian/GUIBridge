@@ -13,9 +13,10 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetStockObject, InvalidateRect, SetBkMode, SetTextColor, StretchDIBits,
-    TextOutW, UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLACK_BRUSH, DIB_RGB_COLORS,
-    DEFAULT_GUI_FONT, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
+    BeginPaint, EndPaint, GetStockObject, InvalidateRect, SetBkMode, SetBrushOrgEx,
+    SetStretchBltMode, SetTextColor, StretchDIBits, TextOutW, UpdateWindow, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, BLACK_BRUSH, DIB_RGB_COLORS, DEFAULT_GUI_FONT, HALFTONE,
+    PAINTSTRUCT, SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::StationsAndDesktops::{CloseDesktop, OpenDesktopW, SetThreadDesktop};
@@ -23,14 +24,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer, LoadCursorW,
     PostQuitMessage, RegisterClassExW, SetTimer, SetWindowLongPtrW, GetWindowLongPtrW, ShowWindow,
     TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW,
-    WM_CREATE, WM_DESTROY, WM_LBUTTONDOWN, WM_PAINT, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
-    WS_VISIBLE,
+    WM_CREATE, WM_DESTROY, WM_LBUTTONDOWN, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const GENERIC_ALL: u32 = 0x1000_0000;
 const PICKER_W: i32 = 230;
 const LINE_H: i32 = 30;
-const MIRROR_H: i32 = 600;
+const MIRROR_H: i32 = 900;
 const TIMER_PAINT: usize = 1;
 
 pub struct Shared {
@@ -50,6 +51,8 @@ pub struct AppState {
     pub worker: Option<JoinHandle<()>>,
     pub hdesk: usize,
     pub mirror_w: i32,
+    pub mirror_h: i32,
+    pub last_seq: u64,
     pub interval_ms: u32,
 }
 
@@ -182,7 +185,11 @@ fn content_bbox(f: &Frame) -> (i32, i32, i32, i32) {
         x1 = x1.max(x - vx + w_);
         y1 = y1.max(y - vy + h_);
     }
-    (x0.max(0), y0.max(0), (x1 - x0).min(vw), (y1 - y0).min(vh))
+    let x0 = x0.max(0);
+    let y0 = y0.max(0);
+    let x1 = x1.min(vw).max(x0 + 1);
+    let y1 = y1.min(vh).max(y0 + 1);
+    (x0, y0, x1 - x0, y1 - y0)
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -199,6 +206,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_TIMER => {
+            if let Some(st) = state(hwnd) {
+                let seq = st.shared.lock().unwrap().seq;
+                if seq != st.last_seq {
+                    st.last_seq = seq;
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
+            }
+            0
+        }
+        WM_SIZE => {
+            if let Some(st) = state(hwnd) {
+                let cw = (lparam & 0xFFFF) as u16 as i32;
+                let ch = ((lparam >> 16) & 0xFFFF) as u16 as i32;
+                st.mirror_w = (cw - PICKER_W).max(1);
+                st.mirror_h = ch.max(1);
+            }
             InvalidateRect(hwnd, std::ptr::null(), 0);
             0
         }
@@ -299,14 +322,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         bmi.bmiHeader.biPlanes = 1;
                         bmi.bmiHeader.biBitCount = 32;
                         bmi.bmiHeader.biCompression = BI_RGB;
-                        // fit-within preserving source aspect (letterbox), never squash
+                        // fit-within preserving source aspect (letterbox), never squash;
+                        // area follows the live client size so maximizing enlarges content
                         let scale = (st.mirror_w as f64 / sw as f64)
-                            .min(MIRROR_H as f64 / sh as f64);
+                            .min(st.mirror_h as f64 / sh as f64);
                         let dw = (sw as f64 * scale).max(1.0) as i32;
                         let dh = (sh as f64 * scale).max(1.0) as i32;
+                        let dx = PICKER_W + (st.mirror_w - dw).max(0) / 2;
+                        let dy = (st.mirror_h - dh).max(0) / 2;
+                        SetStretchBltMode(hdc, HALFTONE);
+                        SetBrushOrgEx(hdc, 0, 0, std::ptr::null_mut());
                         StretchDIBits(
                             hdc,
-                            PICKER_W, 0, dw, dh,
+                            dx, dy, dw, dh,
                             sx, sy, sw, sh,
                             f.bgra.as_ptr() as *const _,
                             &bmi,
@@ -353,6 +381,8 @@ pub fn run(sessions: Vec<Session>, mirror_w: i32, fps: u32) -> i32 {
         worker: None,
         hdesk: 0,
         mirror_w,
+        mirror_h: MIRROR_H,
+        last_seq: 0,
         interval_ms,
     });
     let ptr = Box::into_raw(state);

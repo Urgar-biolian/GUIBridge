@@ -196,11 +196,16 @@ pub fn write_bmp(path: &str, f: &Frame) -> std::io::Result<()> {
 /// Crop a top-down BGRA frame to a content bbox (x, y, w, h) in buffer coords.
 pub fn crop(f: &Frame, bbox: (i32, i32, i32, i32)) -> (u32, u32, Vec<u8>) {
     let (x, y, w, h) = bbox;
-    let w = w.max(1) as usize;
-    let h = h.max(1) as usize;
-    let x = x.max(0) as usize;
-    let y = y.max(0) as usize;
-    let stride = f.width as usize * 4;
+    let fw = f.width as usize;
+    let fh = f.height as usize;
+    let x = (x.max(0) as usize).min(fw);
+    let y = (y.max(0) as usize).min(fh);
+    let w = (w.max(1) as usize).min(fw - x);
+    let h = (h.max(1) as usize).min(fh - y);
+    if w == 0 || h == 0 {
+        return (0, 0, Vec::new());
+    }
+    let stride = fw * 4;
     let mut out = vec![0u8; w * h * 4];
     for row in 0..h {
         let src = (y + row) * stride + x * 4;

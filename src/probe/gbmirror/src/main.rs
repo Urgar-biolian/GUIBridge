@@ -179,6 +179,13 @@ fn capture_mode(args: &Args) -> i32 {
 }
 
 fn main() {
+    // Physical-pixel coords end to end: without this, DWM bitmap-scales the whole mirror
+    // window (double resampling => fuzzy text) and stitch rects mix DPI-virtualized sizes.
+    unsafe {
+        windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+            windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        );
+    }
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
