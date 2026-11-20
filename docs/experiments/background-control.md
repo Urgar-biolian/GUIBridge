@@ -753,3 +753,13 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **定位**：Trae 登录 token **不在任何明文文件**（grep IndexedDB/WebStorage/globalStorage 仅命中无关缓存/扩展；leveldb 仅 `icube` 键无 access_token；Cookies 被运行主机锁住）。token 经 Electron **safeStorage/DPAPI 加密**（密钥在 Local State）或存 **Windows 凭据管理器(keytar)**，机器/profile 绑定；且主机运行时 leveldb/SQLite 未刷盘 ⇒ 子集复制不一致。
 - **隐私清理**：克隆失败后隐藏 profile 留有主机凭据副本（cookies/加密 blob），已 `stop --purge` 清除（`profile_purged=true`），不留主机凭据副本。
 - **定论**：文件子集复制**不可靠**复用 Trae 登录态。剩余候选：① **全 profile 克隆 + 主机 Trae 短暂关闭**（拿一致 SQLite/leveldb + 刷盘标记，**干扰用户主机工作、须显式授权**，机器绑定仍可能失败）；② 完整链暂用**主机 Trae(9222) 已验证适配器**（capability C，前台干扰路线、非隐藏零干扰）。未单方关闭主机 Trae。
+
+### 27.3 全 profile 克隆成功——隐藏 Trae 已登录、主机不受影响（E17d，用户授权关主机 Trae）
+
+子集复制失败（§27.2）后，用户明确授权「全克隆（关主机 Trae）」。分阶段：A 优雅 WM_CLOSE 主机 Trae 主窗 + 收尾子进程至全退出（数据库刷盘）；B 全 profile 克隆 host→hidden（排除纯缓存目录，44986 文件/8.27GB/118s/0 错误，Local State+machineid+state.vscdb 齐全）；C 立即重启主机 Trae（原命令行 9222 + Agui）；D 启隐藏实例（9333，克隆 profile）。
+
+- **结果：登录成功**。隐藏工作台 `hasChatRoot=true`、完整菜单栏/Agent 模式/**手动审批**、聊天区显示主机账号在隔离 demo 的**真实历史任务**（11月18日「密码输入框显示/隐藏按钮」+ TRAE 回复「任务耗时 11m44s/已编辑 2 文件」），**无「登录」欢迎态**。
+- **主机不受影响**：重启后主机 9222（Agui）`hasChatRoot=true`、无登录欢迎态 ⇒ **主机与隐藏同时登录在线**，克隆未挤掉主机会话（同机 DPAPI/凭据可共享解密）。
+- **关键差异**：子集复制失败 vs 全克隆成功 ⇒ 登录态依赖**完整一致的 profile**（刷盘的 state.vscdb/leveldb + Local State DPAPI 密钥 + machineid + 完整 User 存储），且须**主机关闭刷盘**后复制。safeStorage/DPAPI 按 Windows 用户绑定，同用户隐藏实例可解密。
+- **隐私**：隐藏 profile 含主机账号会话（gitignored `var/experiments/hidden_trae_profile`，本地不入库）；用毕可 `stop --purge` 清除。
+- **完整链前提就位**：隐藏 Trae 已登录 + chat root 可用 + CDP 9333 可达 + 主机零干扰 ⇒ `TraeAdapter(port=9333)` 可 `send_task`/`read_result`。写动作仍逐次授权；chat 模式 live 已授权，agent 模式 live 仅隔离 demo（当前工程即 `D:\QoderTest\guibridge-demo-workspace`）+ 手动审批（已设）。
