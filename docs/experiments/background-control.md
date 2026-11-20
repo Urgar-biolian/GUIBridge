@@ -800,3 +800,15 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 - 镜像/录制**会显示真实内容**：默认 picker 首项=wechat（含私聊）；公开录屏须切 benign 靶（隐藏 Trae 隔离 demo / 自绘压测 app）。验证用含私聊 PNG 已删；录制 mp4 为 benign 隐藏 Trae。
 - 属 `src/probe` 演示工具，**不碰冻结契约/引擎**，单人 approve；若日后把 Rust 截图/录制接引擎/MCP 截图接口=契约变更须双人 approve。
 - 构建：`cargo build --offline --release`（windows-sys 0.59 + windows 0.61 + serde_json 均本地缓存，离线可编）；`target/` gitignored。运行：`gbmirror [--registry PATH --width N --fps N]` 或 `--desktop NAME --pid PID --out BMP [--frames N]`。
+
+### 28.6 可读性/闪烁/缩放修复轮（双缓冲 + 主窗口画布 + worker 重采样 + zoom/pan）
+
+用户多轮目视反馈（畸形→看不清→拖动闪烁→左栏字符堆积→窗口未响应）驱动的修复，全部实测闭环：
+
+- **DPI**：`main()` 起始 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`。不设置时 DWM 把整窗位图上采样（二次重采样⇒文字发虚/鬼影），且 `GetSystemMetrics/GetWindowRect` 返回虚拟化(÷1.25)坐标。验证用 Python 脚本同样必须设 -4，否则抓图被裁切。
+- **画布尺寸**：物理虚拟屏 5760×2000（双显示器）整屏画布 46MB/帧≈112ms；可见窗 union bbox 仍被杂散 helper 窗撑到 3151×1802（80.6ms）；改为**焦点主窗口 rect**（registry hwnd，`capture_stitch_focus`）= 实际内容尺寸，capture 回到 **13–14fps**（44ms/帧 PrintWindow 天花板不变）。
+- **闪烁/字符堆积**：类刷 erase + `InvalidateRect(bErase=0)` + TRANSPARENT 文本⇒跨 paint 叠字。改**全双缓冲**：每次 WM_PAINT 新建 offscreen bitmap→`FillRect` 全客户区黑底→镜像+picker+状态全部画进 offscreen→单次 `BitBlt`；`WM_ERASEBKGND=>1`。picker 文本 `DT_END_ELLIPSIS` 限列宽不溢入镜像。压测（切换×4、滚轮×4、pan 拖、外部 resize、REC on/off）后左栏**零堆积**。
+- **未响应**：HALFTONE `StretchDIBits` 在 UI 线程对多 MP 目标耗时秒级⇒消息循环冻住。改**worker 侧重采样**（`capture.rs::resample`：缩=box-average 保文字、放=nearest 保像素锐），UI 线程只做 1:1 blit。滚轮/pan/双击复位压测 `IsHungAppWindow=False` 全程。
+- **zoom/pan**：zoom=1 fit 居中；滚轮 ×1.25/×0.8（clamp 1..8）光标锚定；左键拖 pan（SetCapture/ReleaseCapture）；双击复位。view 参数存 Shared，worker 发布 `ViewFrame{bgra,w,h,dx,dy}`。2.44x 目视文字清晰。
+- **最大化**：`ShowWindow(SW_SHOWMAXIMIZED)` 紧跟创建不生效（showCmd=1）；改 `PostMessageW(WM_SYSCOMMAND, SC_MAXIMIZE)` 由消息循环执行，实测 (-9,-9,2569,1449)。注意：对外部已最大化窗口再 `MoveWindow` 会留 showCmd=3 但 rect=新尺寸，此后 SC_MAXIMIZE 为 no-op（需先 SC_RESTORE）——属 Win32 语义非缺陷。
+- 零干扰保持：镜像只 paint，压测期主机 fg 不变、光标位移 0。

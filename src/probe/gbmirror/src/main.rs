@@ -168,7 +168,7 @@ fn capture_mode(args: &Args) -> i32 {
     }
     println!("],");
     if let Some(f) = &last {
-        println!("  \"virtual_screen\": [{},{},{},{}],", f.virtual_screen.0, f.virtual_screen.1, f.virtual_screen.2, f.virtual_screen.3);
+        println!("  \"content_bbox\": [{},{},{},{}],", f.virtual_screen.0, f.virtual_screen.1, f.virtual_screen.2, f.virtual_screen.3);
         println!("  \"last_window_count\": {},", f.windows.len());
     }
     println!("  \"host\": {{\"fg_before\": {fg0}, \"fg_after\": {fg1}, \"fg_changed\": {}, \"fg_changed_during\": {fg_changed_during},", fg0 != fg1);

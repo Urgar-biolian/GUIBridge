@@ -18,7 +18,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::Storage::Xps::PrintWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetSystemMetrics, GetWindowRect, IsWindowVisible, PW_RENDERFULLCONTENT,
+    EnumWindows, GetSystemMetrics, GetWindowRect, IsWindow, IsWindowVisible, PW_RENDERFULLCONTENT,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
@@ -36,7 +36,7 @@ pub struct Frame {
     pub width: i32,
     pub height: i32,
     pub bgra: Vec<u8>, // top-down BGRA, len = width*height*4
-    pub virtual_screen: (i32, i32, i32, i32),
+    pub virtual_screen: (i32, i32, i32, i32), // content-bbox origin+size in absolute screen coords
     pub windows: Vec<WinInfo>,
 }
 
@@ -53,8 +53,19 @@ unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     TRUE
 }
 
-/// Capture the whole hidden desktop into an in-memory top-down BGRA frame. Worker-side.
+/// Capture the hidden desktop's visible-window union into an in-memory top-down BGRA frame.
+/// Worker-side. The canvas is the content bbox, NOT the whole virtual screen: on multi-monitor
+/// hosts the physical virtual screen is huge (measured 5760x2000) and a full-screen canvas cost
+/// ~112ms/frame in alloc+GetDIBits alone; the union bbox cuts that to the actual content size.
 pub unsafe fn capture_stitch() -> Option<Frame> {
+    capture_stitch_focus(None)
+}
+
+/// Same as capture_stitch, but the canvas is the focus window's rect (the session's main
+/// window) instead of the union of all visible windows: stray helper windows on other
+/// monitors otherwise inflate the union (measured 3151x1802 vs 1609x1370 main-only).
+/// Falls back to the union when the focus hwnd is dead or off-screen.
+pub unsafe fn capture_stitch_focus(focus: Option<HWND>) -> Option<Frame> {
     let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
     let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
     let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
@@ -71,13 +82,37 @@ pub unsafe fn capture_stitch() -> Option<Frame> {
             wins.push((h, r, area));
         }
     }
+    if wins.is_empty() {
+        return None;
+    }
     wins.sort_by(|a, b| b.2.cmp(&a.2)); // largest first
+
+    let mut focus_rect: Option<RECT> = None;
+    if let Some(fh) = focus {
+        if IsWindow(fh) != 0 {
+            let mut r: RECT = zeroed();
+            if GetWindowRect(fh, &mut r) != 0 && r.right > r.left && r.bottom > r.top {
+                focus_rect = Some(r);
+            }
+        }
+    }
+    let (ux0, uy0, ux1, uy1) = match focus_rect {
+        Some(r) => (r.left.max(vx), r.top.max(vy), r.right.min(vx + vw), r.bottom.min(vy + vh)),
+        None => (
+            wins.iter().map(|(_, r, _)| r.left).min().unwrap().max(vx),
+            wins.iter().map(|(_, r, _)| r.top).min().unwrap().max(vy),
+            wins.iter().map(|(_, r, _)| r.right).max().unwrap().min(vx + vw),
+            wins.iter().map(|(_, r, _)| r.bottom).max().unwrap().min(vy + vh),
+        ),
+    };
+    let cw = (ux1 - ux0).max(1);
+    let ch = (uy1 - uy0).max(1);
 
     let screen_dc = GetDC(NULL);
     let mem_dc = CreateCompatibleDC(screen_dc);
-    let bmp = CreateCompatibleBitmap(screen_dc, vw, vh);
+    let bmp = CreateCompatibleBitmap(screen_dc, cw, ch);
     let old = SelectObject(mem_dc, bmp);
-    PatBlt(mem_dc, 0, 0, vw, vh, BLACKNESS); // hidden desktop paints no wallpaper
+    PatBlt(mem_dc, 0, 0, cw, ch, BLACKNESS); // hidden desktop paints no wallpaper
 
     let mut placed: Vec<WinInfo> = Vec::new();
     for (h, r, _) in &wins {
@@ -90,7 +125,7 @@ pub unsafe fn capture_stitch() -> Option<Frame> {
         let tbmp = CreateCompatibleBitmap(hwnd_dc, w, hh);
         let told = SelectObject(tmp_dc, tbmp);
         let pw = PrintWindow(*h, tmp_dc, PW_RENDERFULLCONTENT) != 0;
-        let blit = BitBlt(mem_dc, x - vx, y - vy, w, hh, tmp_dc, 0, 0, SRCCOPY) != 0;
+        let blit = BitBlt(mem_dc, x - ux0, y - uy0, w, hh, tmp_dc, 0, 0, SRCCOPY) != 0;
         SelectObject(tmp_dc, told);
         DeleteObject(tbmp);
         DeleteDC(tmp_dc);
@@ -105,17 +140,17 @@ pub unsafe fn capture_stitch() -> Option<Frame> {
 
     let mut bmi: BITMAPINFO = zeroed();
     bmi.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
-    bmi.bmiHeader.biWidth = vw;
-    bmi.bmiHeader.biHeight = -vh; // top-down
+    bmi.bmiHeader.biWidth = cw;
+    bmi.bmiHeader.biHeight = -ch; // top-down
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
-    let mut buf = vec![0u8; (vw as usize) * (vh as usize) * 4];
+    let mut buf = vec![0u8; (cw as usize) * (ch as usize) * 4];
     let got = GetDIBits(
         mem_dc,
         bmp,
         0,
-        vh as u32,
+        ch as u32,
         buf.as_mut_ptr() as *mut _,
         &mut bmi,
         DIB_RGB_COLORS,
@@ -128,10 +163,10 @@ pub unsafe fn capture_stitch() -> Option<Frame> {
         return None;
     }
     Some(Frame {
-        width: vw,
-        height: vh,
+        width: cw,
+        height: ch,
         bgra: buf,
-        virtual_screen: (vx, vy, vw, vh),
+        virtual_screen: (ux0, uy0, cw, ch),
         windows: placed,
     })
 }
@@ -191,6 +226,62 @@ pub fn write_bmp(path: &str, f: &Frame) -> std::io::Result<()> {
         out.write_all(&f.bgra[y * row..(y + 1) * row])?;
     }
     Ok(())
+}
+
+/// Resample a source rect of a frame into a new top-down BGRA buffer: box-average when
+/// downscaling (clean text), nearest-neighbor when upscaling (pixel-sharp). Runs on the capture
+/// worker: HALFTONE StretchDIBits on the UI thread cost seconds per multi-MP paint and froze
+/// the message loop ("not responding") during zoom/pan.
+pub fn resample(f: &Frame, sx: i32, sy: i32, sw: i32, sh: i32, dw: i32, dh: i32) -> Vec<u8> {
+    let dw = dw.max(1) as usize;
+    let dh = dh.max(1) as usize;
+    let mut out = vec![0u8; dw * dh * 4];
+    let fw = f.width as usize;
+    let fh = f.height as usize;
+    let sx = (sx.max(0) as usize).min(fw);
+    let sy = (sy.max(0) as usize).min(fh);
+    let sw = (sw.max(1) as usize).min(fw - sx);
+    let sh = (sh.max(1) as usize).min(fh - sy);
+    if sw == 0 || sh == 0 {
+        return out;
+    }
+    let src = &f.bgra;
+    if dw <= sw && dh <= sh {
+        for dy in 0..dh {
+            let y0 = sy + dy * sh / dh;
+            let y1 = (sy + (dy + 1) * sh / dh).max(y0 + 1).min(fh);
+            for dx in 0..dw {
+                let x0 = sx + dx * sw / dw;
+                let x1 = (sx + (dx + 1) * sw / dw).max(x0 + 1).min(fw);
+                let (mut b, mut g, mut r, mut n) = (0u64, 0u64, 0u64, 0u64);
+                for yy in y0..y1 {
+                    let row = yy * fw;
+                    for xx in x0..x1 {
+                        let i = (row + xx) * 4;
+                        b += src[i] as u64;
+                        g += src[i + 1] as u64;
+                        r += src[i + 2] as u64;
+                        n += 1;
+                    }
+                }
+                let o = (dy * dw + dx) * 4;
+                out[o] = (b / n) as u8;
+                out[o + 1] = (g / n) as u8;
+                out[o + 2] = (r / n) as u8;
+                out[o + 3] = 255;
+            }
+        }
+    } else {
+        for dy in 0..dh {
+            let row = (sy + dy * sh / dh) * fw;
+            for dx in 0..dw {
+                let i = (row + sx + dx * sw / dw) * 4;
+                let o = (dy * dw + dx) * 4;
+                out[o..o + 4].copy_from_slice(&src[i..i + 4]);
+            }
+        }
+    }
+    out
 }
 
 /// Crop a top-down BGRA frame to a content bbox (x, y, w, h) in buffer coords.
