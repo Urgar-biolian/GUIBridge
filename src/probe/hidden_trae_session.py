@@ -182,7 +182,8 @@ def stop_session(purge: bool = False) -> dict:
     st = load_state()
     out: dict = {"had_session": bool(st)}
     if st:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(st["pid"])], capture_output=True, text=True)
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(st["pid"])], capture_output=True,
+                       text=True, encoding="utf-8", errors="replace")
         out["killed_pid"] = st["pid"]
         hdesk = user32.OpenDesktopW(st["desktop"], 0, False, GENERIC_ALL)
         if hdesk:

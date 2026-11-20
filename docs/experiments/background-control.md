@@ -744,3 +744,12 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **登录卡死（实测负例）**：登录墙「个人用户/企业用户」与工作台「登录」按钮，鼠标事件与 JS `el.click()` 均**只发遥测 POST**（`mcs16-normal-sg.trae.ai/list`），**无 OAuth 请求、无应用内 QR（img/iframe/canvas 全空）、无外部浏览器弹出**（主机仅预存 msedgewebview2 运行时，无新 chrome/msedge/firefox 主进程）。控制台 `[SANDBOX_TO_MAIN_GET_SETUP_PAGE_LOGIN_FAILED_STATUS]`、`unknown service 'logService'`、`boot_config_not_ready`。隐藏桌面 `SetForegroundWindow` 返回 0（非输入桌面无法激活）。
 - **定论**：Trae 个人登录是**主进程服务/外部浏览器 OAuth 流**（非应用内 QR），依赖窗口激活或主机浏览器回调，在**非活动隐藏桌面**无法完成 ⇒ 「镜像二维码我来扫」前提不成立（没有可扫的 QR）。未登录 ⇒ AI chat 不回复，`send_task→read_result` 完整链在隐藏桌面**尚未通**。界面可达 ≠ 登录可用 ≠ AI 可用，三层分开如实声明。
 - **候选路线（待授权/待验证，未单方执行）**：① 若能从主进程 IPC 抽出 OAuth URL，用户在主机浏览器手动完成登录、`trae://` 回调隐藏实例（需验证回调能否跨桌面送达）；② 复用主机已登录会话到隐藏 profile（**触碰凭据，须显式授权 + 风险评估**，可能使主机会话失效）；③ 完整链暂用主机 Trae(9222) 已验证适配器（capability C），但那是前台干扰路线、非隐藏零干扰。
+
+### 27.2 复用主机登录态尝试（用户授权，`trae_session_clone.py`，run `20261120T032907Z`）——失败
+
+用户授权「复用主机登录态」。只读主机 profile（`AppData\Roaming\Trae`，主机 Trae 保持运行、只读不改），把认证相关子集（machineid/Local State/Preferences/aha/ahanet/Local Storage/Session Storage/Network/User globalStorage state.vscdb+storage.json）复制到隐藏 profile，重启隐藏实例。
+
+- **结果：未登录**。隐藏工作台仍「登录」欢迎态 + 「个人用户/企业用户」登录墙（`hasChatRoot=true` 但 AI 未登录）。主机 Trae（90232）全程运行未受影响。
+- **定位**：Trae 登录 token **不在任何明文文件**（grep IndexedDB/WebStorage/globalStorage 仅命中无关缓存/扩展；leveldb 仅 `icube` 键无 access_token；Cookies 被运行主机锁住）。token 经 Electron **safeStorage/DPAPI 加密**（密钥在 Local State）或存 **Windows 凭据管理器(keytar)**，机器/profile 绑定；且主机运行时 leveldb/SQLite 未刷盘 ⇒ 子集复制不一致。
+- **隐私清理**：克隆失败后隐藏 profile 留有主机凭据副本（cookies/加密 blob），已 `stop --purge` 清除（`profile_purged=true`），不留主机凭据副本。
+- **定论**：文件子集复制**不可靠**复用 Trae 登录态。剩余候选：① **全 profile 克隆 + 主机 Trae 短暂关闭**（拿一致 SQLite/leveldb + 刷盘标记，**干扰用户主机工作、须显式授权**，机器绑定仍可能失败）；② 完整链暂用**主机 Trae(9222) 已验证适配器**（capability C，前台干扰路线、非隐藏零干扰）。未单方关闭主机 Trae。
