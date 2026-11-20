@@ -134,12 +134,14 @@ def test_page_localized_keeps_ids_enums_and_offline():
     page = gd.PAGE
     for eid in ("sessions", "mirror", "cap", "props", "events", "evcount", "filter",
                 "limit", "reload", "snapsess", "privwrap", "confirm", "snap",
-                "snapmeta", "snapimg", "ts", "auto"):
+                "snapmeta", "snapimg", "ts", "auto",
+                "mirroropen", "mirrorclose", "mirrorwidth", "mirrorfps", "mirroract"):
         assert f'id="{eid}"' in page, eid
     for zh in ("保活会话", "镜像 / 录制", "能力表与待评审提案", "按需快照",
                "应用", "操作", "影响", "幂等", "通道（实测风险）", "证据",
                "光标位移", "外部输入", "检出率", "已运行", "调试端口",
-               "无干扰", "有干扰", "未确认", "微信快照含私聊画面"):
+               "无干扰", "有干扰", "未确认", "微信快照含私聊画面",
+               "打开镜像窗口", "关闭镜像窗口", "主机可见动作"):
         assert zh in page, zh
     # raw enums stay visible as technical identifiers (legend / options / tooltips)
     for raw in gd.FOUR_STATES | {"focus_switch", "physical_input", "unknown", "none"}:
@@ -147,3 +149,68 @@ def test_page_localized_keeps_ids_enums_and_offline():
     # offline: no remote stylesheet/script/font/image fetches (svg xmlns is not a fetch)
     assert re.search(r"""(?:src|href)\s*=\s*["']https?:""", page) is None
     assert "@import" not in page and "url(http" not in page
+
+
+def test_launch_args_clamps_width_and_fps():
+    a = gd.launch_args(1400, 30)
+    assert a[0] == str(gd.GBMIRROR_EXE)
+    assert a[a.index("--width") + 1] == "1400"
+    assert a[a.index("--fps") + 1] == "30"
+    assert a[a.index("--registry") + 1] == str(gd.REGISTRY_PATH)
+    assert gd.launch_args(10, 999)[a.index("--width") + 1] == "400"
+    assert gd.launch_args(99999, 0)[a.index("--fps") + 1] == "1"
+
+
+def test_interference_summary_counts_switches_and_cursor():
+    fg0, c0 = 111, (100, 100)
+    clean = gd.interference_summary([(111, (100, 100)), (111, (100, 100))], fg0, c0)
+    assert clean["fg_switches"] == 0 and clean["max_disp_during"] == 0
+    assert clean["zero_interference_observed"] is True
+    dirty = gd.interference_summary([(222, (100, 100)), (111, (103, 104))], fg0, c0)
+    assert dirty["fg_switches"] == 2  # 111->222->111
+    assert dirty["max_disp_during"] == 5 and dirty["cursor_displacement"] == 5
+    assert dirty["fg_changed"] is False and dirty["zero_interference_observed"] is False
+    assert gd.interference_summary([], fg0, c0)["zero_interference_observed"] is True
+
+
+def test_running_mirror_pid_never_selects_a_keepalive_session(monkeypatch):
+    # a stale/foreign pid in the status export must not become a close target
+    monkeypatch.setattr(gd, "mirror_status", lambda: {"running": True, "pid": 70788})
+    monkeypatch.setattr(gd, "pid_alive", lambda pid: True)
+    monkeypatch.setattr(gd, "pid_image", lambda pid: "Weixin.exe")
+    monkeypatch.setattr(gd, "LAUNCHED", {})
+    assert gd.running_mirror_pid() is None
+    monkeypatch.setattr(gd, "pid_image", lambda pid: "gbmirror.exe")
+    assert gd.running_mirror_pid() == 70788
+
+
+def test_close_mirror_refuses_non_gbmirror_target(monkeypatch):
+    monkeypatch.setattr(gd, "running_mirror_pid", lambda: 4242)
+    monkeypatch.setattr(gd, "pid_image", lambda pid: "Trae.exe")
+    monkeypatch.setattr(gd, "_post_close", lambda pid: pytest.fail("must not message a foreign process"))
+    body, code = gd.close_mirror()
+    assert code == 403 and body["ok"] is False and "refuse to close" in body["error"]
+
+
+def test_close_mirror_reports_not_running(monkeypatch):
+    monkeypatch.setattr(gd, "running_mirror_pid", lambda: None)
+    body, code = gd.close_mirror()
+    assert code == 409 and body["error"] == "mirror window not running"
+
+
+def test_open_mirror_does_not_relaunch_a_running_window(monkeypatch, tmp_path):
+    exe = tmp_path / "gbmirror.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(gd, "GBMIRROR_EXE", exe)
+    monkeypatch.setattr(gd, "running_mirror_pid", lambda: 4242)
+    monkeypatch.setattr(gd.subprocess, "Popen",
+                        lambda *a, **k: pytest.fail("must not spawn a second mirror"))
+    body, code = gd.open_mirror()
+    assert code == 200 and body["already_running"] is True and body["pid"] == 4242
+    assert body["host_visible"] is True
+
+
+def test_open_mirror_requires_built_exe(monkeypatch, tmp_path):
+    monkeypatch.setattr(gd, "GBMIRROR_EXE", tmp_path / "missing.exe")
+    body, code = gd.open_mirror()
+    assert code == 500 and body["error"] == "gbmirror.exe not built"

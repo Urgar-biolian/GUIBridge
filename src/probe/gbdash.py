@@ -1,10 +1,14 @@
 """GUIBridge read-only localhost observation dashboard (probe-side, single approve).
 
 A single-file stdlib HTTP server + embedded single-page UI that aggregates the EXISTING
-probe artefacts into one management/observation view. It never writes to the engine, the
-frozen capability table, or any keep-alive session; the only side effects are (a) reading
-files and (b) an on-demand one-frame hidden-desktop snapshot via `gbmirror --desktop`
-(read-only, zero-interference, re-measured per call). WeChat snapshots expose private
+probe artefacts into one management/observation view. Observation is read-only: it never
+writes to the engine, the frozen capability table, or any keep-alive session. Side effects
+are limited to (a) reading files, (b) an on-demand one-frame hidden-desktop snapshot via
+`gbmirror --desktop` (read-only, zero-interference, re-measured per call), and (c) an
+EXPLICIT user-clicked open/close of the native mirror window (`POST /api/mirror/open|close`).
+(c) is host-visible -- a real window appears on the user's desktop and may take the
+foreground -- so its host impact is measured and reported, never claimed to be zero, and
+closing refuses any target whose image is not gbmirror.exe. WeChat snapshots expose private
 chats and therefore require an explicit confirm flag; the BMP is deleted right after it
 is read into the response so nothing readable persists on disk.
 
@@ -24,10 +28,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
 import json
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -254,6 +260,197 @@ def take_snapshot(session, confirm):
     }, 200
 
 
+# ------------------------------------------- native mirror window control (explicit user action)
+#
+# Opening the native mirror window is HOST-VISIBLE: a real window appears on the user's desktop
+# and may take the foreground. It is therefore NOT a read-only observation, and it only happens
+# on an explicit button click (POST). The host impact is measured around the launch and reported
+# as measured -- never claimed to be zero. Closing verifies the target image is gbmirror.exe, so
+# a keep-alive session (wechat/trae) can never be terminated through this path.
+
+MIRROR_LOCK = threading.Lock()
+LAUNCHED: dict = {}
+STILL_ACTIVE = 259
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_TERMINATE = 0x0001
+WM_CLOSE = 0x0010
+
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def _k32():
+    k = ctypes.windll.kernel32
+    k.OpenProcess.restype = ctypes.c_void_p
+    k.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    k.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    k.QueryFullProcessImageNameW.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_ulong)]
+    k.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    return k
+
+
+def _u32():
+    u = ctypes.windll.user32
+    u.GetForegroundWindow.restype = ctypes.c_void_p
+    u.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
+    u.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    u.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    u.EnumWindows.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    return u
+
+
+def host_fg():
+    return int(_u32().GetForegroundWindow() or 0)
+
+
+def host_cursor():
+    p = POINT()
+    _u32().GetCursorPos(ctypes.byref(p))
+    return (p.x, p.y)
+
+
+def pid_alive(pid):
+    k = _k32()
+    h = k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not h:
+        return False
+    code = ctypes.c_ulong()
+    ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+    k.CloseHandle(h)
+    return bool(ok) and code.value == STILL_ACTIVE
+
+
+def pid_image(pid):
+    k = _k32()
+    h = k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not h:
+        return None
+    buf = ctypes.create_unicode_buffer(1024)
+    n = ctypes.c_ulong(1024)
+    ok = k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n))
+    k.CloseHandle(h)
+    return Path(buf.value).name if ok else None
+
+
+def launch_args(width=1400, fps=30):
+    w = max(400, min(3840, int(width)))
+    f = max(1, min(60, int(fps)))
+    return [str(GBMIRROR_EXE), "--registry", str(REGISTRY_PATH), "--width", str(w), "--fps", str(f)]
+
+
+def _dist(a, b):
+    return int(round(((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5))
+
+
+def interference_summary(samples, fg0, c0):
+    """Poll-based host impact over (fg, cursor) samples. <2ms switches can be missed."""
+    switches, prev, maxd = 0, fg0, 0
+    for fg, c in samples:
+        if fg != prev:
+            switches += 1
+        prev = fg
+        maxd = max(maxd, _dist(c0, c))
+    last_fg = samples[-1][0] if samples else fg0
+    last_c = samples[-1][1] if samples else c0
+    return {
+        "fg_before": fg0, "fg_after": last_fg, "fg_changed": last_fg != fg0,
+        "fg_switches": switches, "cursor_displacement": _dist(c0, last_c),
+        "max_disp_during": maxd, "samples": len(samples),
+        "zero_interference_observed": switches == 0 and maxd == 0,
+    }
+
+
+def measure_window(seconds=1.5, poll_s=0.005, fg0=None, c0=None):
+    fg0 = host_fg() if fg0 is None else fg0
+    c0 = host_cursor() if c0 is None else c0
+    samples = []
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        samples.append((host_fg(), host_cursor()))
+        time.sleep(poll_s)
+    out = interference_summary(samples, fg0, c0)
+    out["window_s"] = seconds
+    out["poll_ms"] = poll_s * 1000
+    return out
+
+
+def running_mirror_pid():
+    m = mirror_status()
+    pid = m.get("pid")
+    if m.get("running") and pid and pid_alive(pid) and (pid_image(pid) or "").lower() == "gbmirror.exe":
+        return int(pid)
+    for p in list(LAUNCHED):
+        if pid_alive(p) and (pid_image(p) or "").lower() == "gbmirror.exe":
+            return int(p)
+    return None
+
+
+def open_mirror(width=1400, fps=30):
+    if not GBMIRROR_EXE.exists():
+        return {"ok": False, "error": "gbmirror.exe not built"}, 500
+    with MIRROR_LOCK:
+        pid = running_mirror_pid()
+        if pid:
+            return {"ok": True, "already_running": True, "pid": pid, "host_visible": True}, 200
+        fg0, c0 = host_fg(), host_cursor()
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        proc = subprocess.Popen(
+            launch_args(width, fps), cwd=str(ROOT),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+        )
+        LAUNCHED[proc.pid] = {"ts": time.time(), "width": int(width), "fps": int(fps)}
+        host = measure_window(1.5, fg0=fg0, c0=c0)
+        return {"ok": True, "already_running": False, "pid": proc.pid,
+                "host_visible": True, "host": host}, 200
+
+
+def _post_close(pid):
+    u = _u32()
+    hits = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+    def cb(hwnd, _lp):
+        owner = ctypes.c_ulong()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid:
+            u.PostMessageW(hwnd, WM_CLOSE, None, None)
+            hits.append(hwnd)
+        return 1
+
+    u.EnumWindows(cb, None)
+    return len(hits)
+
+
+def close_mirror(timeout_s=4.0):
+    with MIRROR_LOCK:
+        pid = running_mirror_pid()
+        if not pid:
+            return {"ok": False, "error": "mirror window not running"}, 409
+        img = (pid_image(pid) or "").lower()
+        if img != "gbmirror.exe":
+            return {"ok": False, "error": f"refuse to close pid {pid} ({img or 'unknown image'})"}, 403
+        n = _post_close(pid)
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end and pid_alive(pid):
+            time.sleep(0.05)
+        forced = False
+        if pid_alive(pid):
+            k = _k32()
+            h = k.OpenProcess(PROCESS_TERMINATE, False, pid)
+            if h:
+                k.TerminateProcess(h, 0)
+                k.CloseHandle(h)
+                forced = True
+            time.sleep(0.2)
+        closed = not pid_alive(pid)
+        LAUNCHED.pop(pid, None)
+        return {"ok": closed, "pid": pid, "windows_messaged": n, "forced": forced,
+                "graceful": n > 0 and not forced, "closed": closed}, (200 if closed else 500)
+
+
 # ---------------------------------------------------------------- http server
 
 class Handler(BaseHTTPRequestHandler):
@@ -283,7 +480,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/sessions":
                 self._send(200, {"sessions": sessions_view(), "ts": time.time()})
             elif path == "/api/mirror":
-                self._send(200, mirror_status())
+                m = mirror_status()
+                m["exe_built"] = GBMIRROR_EXE.exists()
+                m["launched_by_dashboard"] = m.get("pid") in LAUNCHED
+                self._send(200, m)
             elif path == "/api/capability":
                 self._send(200, capability_view())
             elif path == "/api/events":
@@ -295,6 +495,26 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"ok": False, "error": "not found"})
         except Exception as exc:  # surface as json, never crash the loop
+            self._send(500, {"ok": False, "error": repr(exc)})
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length:
+                self.rfile.read(length)
+        except (OSError, ValueError):
+            pass
+        try:
+            if u.path == "/api/mirror/open":
+                body, code = open_mirror(q.get("width", 1400), q.get("fps", 30))
+            elif u.path == "/api/mirror/close":
+                body, code = close_mirror()
+            else:
+                body, code = {"ok": False, "error": "not found"}, 404
+            self._send(code, body)
+        except Exception as exc:
             self._send(500, {"ok": False, "error": repr(exc)})
 
 
@@ -463,6 +683,9 @@ button,select{
 select{appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2393a1ae'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center}
 button:hover,select:hover{border-color:var(--amber-line);background:#182029}
 button:active{transform:translateY(1px)}
+button:disabled{opacity:.38;cursor:not-allowed}
+button:disabled:hover{background:#131a21;border-color:var(--line2)}
+button.primary:disabled:hover{background:var(--amber);border-color:var(--amber)}
 button.primary{background:var(--amber);border-color:var(--amber);color:#0a0c0f;font-weight:700;letter-spacing:.06em}
 button.primary:hover{background:#ffc44d;border-color:#ffc44d}
 :focus-visible{outline:2px solid var(--amber);outline-offset:2px}
@@ -533,6 +756,17 @@ footer .sep{width:1px;height:12px;background:var(--line2)}
   <section class="panel p5" style="--i:1">
     <div class="phead"><span class="idx">02</span><h2>镜像 / 录制</h2><span class="hint">gbmirror 状态导出</span></div>
     <div id="mirror"></div>
+    <div class="row" style="margin-top:13px">
+      <button id="mirroropen" class="primary">打开镜像窗口</button>
+      <button id="mirrorclose">关闭镜像窗口</button>
+      <select id="mirrorwidth" aria-label="镜像窗口宽度">
+        <option value="1000">宽 1000</option><option value="1400" selected>宽 1400</option><option value="1800">宽 1800</option>
+      </select>
+      <select id="mirrorfps" aria-label="镜像帧率">
+        <option value="15">15 帧/秒</option><option value="24">24 帧/秒</option><option value="30" selected>30 帧/秒</option>
+      </select>
+    </div>
+    <div class="note" id="mirroract">打开镜像窗口是<b>主机可见动作</b>：会在你的桌面弹出真实窗口、可能切换前台，影响按实测显示。关闭仅针对 gbmirror.exe，绝不触碰保活会话。</div>
   </section>
   <section class="panel" style="--i:2">
     <div class="phead"><span class="idx">03</span><h2>能力表与待评审提案</h2><span class="hint">冻结契约 · 风险按实测声明</span></div>
@@ -583,7 +817,8 @@ footer .sep{width:1px;height:12px;background:var(--line2)}
   </section>
 </main>
 <footer>
-  <span>只读边界：不写引擎 / 冻结能力表 / 保活会话</span><span class="sep"></span>
+  <span>观测只读：不写引擎 / 冻结能力表 / 保活会话</span><span class="sep"></span>
+  <span>镜像窗口开关＝显式主机可见动作</span><span class="sep"></span>
   <span>仅绑定 127.0.0.1</span><span class="sep"></span>
   <span>数据源 <code>var/experiments</code> · <code>packages/routing/capabilities.draft.yaml</code> · <code>docs/proposals</code></span>
 </footer>
@@ -605,6 +840,8 @@ const ERR_ZH=[
  [/unknown session/i,'未知会话'],
  [/gbmirror.exe not built/i,'gbmirror.exe 尚未构建（cargo build --release）'],
  [/capture produced no bmp/i,'截图未生成 BMP'],
+ [/mirror window not running/i,'镜像窗口未在运行'],
+ [/refuse to close/i,'拒绝关闭：目标进程不是 gbmirror.exe（保活会话受保护）'],
  [/not found/i,'接口不存在']
 ];
 const zhErr=m=>{for(const pair of ERR_ZH)if(pair[0].test(m))return pair[1];return m;};
@@ -647,7 +884,29 @@ async function loadMirror(){const m=await j('/api/mirror');
   <div class="kv"><span>帧序号</span><b>${dash(m.seq)}</b></div>
   <div class="kv"><span>状态延迟</span><b>${m.age_s!=null?esc(m.age_s)+' 秒':'—'}</b></div>
   <div class="kv"><span>录制</span><b>${m.rec_on?badge('录制中','bad','rec on'):badge('未录制','mut','rec off')} ${esc(m.rec_info??'')}</b></div>
-  <div class="kv"><span>录像文件</span><b>${size}</b></div>`;}
+  <div class="kv"><span>录像文件</span><b>${size}</b></div>
+  <div class="kv"><span>窗口进程</span><b>${dash(m.pid)}${m.launched_by_dashboard?' · 本页启动':''}</b></div>`;
+ const op=$('mirroropen'),cl=$('mirrorclose');
+ op.disabled=!m.exe_built||!!m.running;
+ op.title=m.exe_built?'在主机桌面打开原生镜像窗口':'gbmirror.exe 未构建';
+ cl.disabled=!m.running&&!m.launched_by_dashboard;}
+async function mirrorCtl(action){
+ const act=$('mirroract');
+ act.textContent=action==='open'?'正在打开镜像窗口…':'正在关闭镜像窗口…';
+ try{
+  const qs=action==='open'?`?width=${$('mirrorwidth').value}&fps=${$('mirrorfps').value}`:'';
+  const r=await fetch('/api/mirror/'+action+qs,{method:'POST'});
+  const d=await r.json();
+  if(!r.ok||d.ok===false)throw new Error(d.error||r.status);
+  if(action==='open'){
+   if(d.already_running){act.textContent=`镜像窗口已在运行（pid ${d.pid}），未重复启动。`;}
+   else{const h=d.host||{};
+    act.innerHTML=`已打开镜像窗口 pid ${d.pid} · 实测 ${h.window_s}s 窗口：主机前台切换 <b>${h.fg_switches}</b> 次 · 光标最大位移 <b>${h.max_disp_during}px</b> · ${h.zero_interference_observed?'未观测到干扰':'观测到前台/光标变化（打开可见窗口属预期，非零干扰）'}`;}
+  }else{
+   act.textContent=`已关闭镜像窗口 pid ${d.pid}（${d.graceful?'WM_CLOSE 优雅退出，录制已收尾':'强制结束'}）。`;
+  }
+  loadMirror();
+ }catch(e){act.textContent='失败：'+zhErr(e.message);act.title=e.message;}}
 async function loadCap(){const c=await j('/api/capability');
  $('cap').innerHTML='<thead><tr><th>应用</th><th>操作</th><th>影响</th><th>幂等</th><th>通道（实测风险）</th><th>证据</th></tr></thead><tbody>'+
   c.entries.map(e=>`<tr><td class="num">${esc(e.app)}</td><td class="num">${esc(e.operation)}</td>
@@ -684,6 +943,7 @@ async function refreshFast(){try{await Promise.all([loadSessions(),loadMirror()]
  }catch(e){$('ts').textContent='错误 '+zhErr(e.message);}}
 $('reload').onclick=loadEvents;$('filter').onchange=renderEvents;$('limit').onchange=loadEvents;
 $('snap').onclick=snap;$('snapsess').onchange=syncPriv;
+$('mirroropen').onclick=()=>mirrorCtl('open');$('mirrorclose').onclick=()=>mirrorCtl('close');
 loadCap();loadEvents();refreshFast();
 setInterval(()=>{if($('auto').checked)refreshFast();},3000);
 </script></body></html>

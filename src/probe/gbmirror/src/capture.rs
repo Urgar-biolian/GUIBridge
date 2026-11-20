@@ -195,37 +195,65 @@ pub fn frame_stats(f: &Frame) -> (f64, usize, usize) {
     (nb as f64 / total.max(1) as f64, colors.len(), total)
 }
 
-/// Write a top-down BGRA frame as a bottom-up 32bpp BMP (proof artifact only).
-pub fn write_bmp(path: &str, f: &Frame) -> std::io::Result<()> {
-    use std::io::Write;
-    let w = f.width as usize;
-    let h = f.height as usize;
+/// Encode a top-down BGRA buffer as a bottom-up 32bpp BMP in memory.
+pub fn bmp_bytes(w: u32, h: u32, bgra: &[u8]) -> Vec<u8> {
+    let w = w as usize;
+    let h = h as usize;
     let row = w * 4;
     let data_size = (row * h) as u32;
-    let mut out = std::fs::File::create(path)?;
+    let mut out = Vec::with_capacity(54 + data_size as usize);
     // BITMAPFILEHEADER (14 bytes)
-    out.write_all(&0x4D42u16.to_le_bytes())?; // 'BM'
-    out.write_all(&(14 + 40 + data_size).to_le_bytes())?;
-    out.write_all(&0u16.to_le_bytes())?;
-    out.write_all(&0u16.to_le_bytes())?;
-    out.write_all(&54u32.to_le_bytes())?;
+    out.extend_from_slice(&0x4D42u16.to_le_bytes()); // 'BM'
+    out.extend_from_slice(&(14 + 40 + data_size).to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&54u32.to_le_bytes());
     // BITMAPINFOHEADER (40 bytes), bottom-up
-    out.write_all(&40u32.to_le_bytes())?;
-    out.write_all(&(w as i32).to_le_bytes())?;
-    out.write_all(&(h as i32).to_le_bytes())?;
-    out.write_all(&1u16.to_le_bytes())?;
-    out.write_all(&32u16.to_le_bytes())?;
-    out.write_all(&0u32.to_le_bytes())?; // BI_RGB
-    out.write_all(&data_size.to_le_bytes())?;
-    out.write_all(&0i32.to_le_bytes())?;
-    out.write_all(&0i32.to_le_bytes())?;
-    out.write_all(&0u32.to_le_bytes())?;
-    out.write_all(&0u32.to_le_bytes())?;
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(w as i32).to_le_bytes());
+    out.extend_from_slice(&(h as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&32u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+    out.extend_from_slice(&data_size.to_le_bytes());
+    out.extend_from_slice(&0i32.to_le_bytes());
+    out.extend_from_slice(&0i32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
     // pixel rows reversed (top-down buffer -> bottom-up file)
     for y in (0..h).rev() {
-        out.write_all(&f.bgra[y * row..(y + 1) * row])?;
+        out.extend_from_slice(&bgra[y * row..(y + 1) * row]);
     }
-    Ok(())
+    out
+}
+
+/// Write a top-down BGRA frame as a bottom-up 32bpp BMP (proof artifact only).
+pub fn write_bmp(path: &str, f: &Frame) -> std::io::Result<()> {
+    std::fs::write(path, bmp_bytes(f.width as u32, f.height as u32, &f.bgra))
+}
+
+/// Union of the captured windows' rects in buffer coords (drops empty black margins).
+pub fn content_bbox(f: &Frame) -> (i32, i32, i32, i32) {
+    let (vx, vy, vw, vh) = f.virtual_screen;
+    if f.windows.is_empty() {
+        return (0, 0, vw, vh);
+    }
+    let mut x0 = i32::MAX;
+    let mut y0 = i32::MAX;
+    let mut x1 = i32::MIN;
+    let mut y1 = i32::MIN;
+    for w in &f.windows {
+        let (x, y, w_, h_) = w.rect;
+        x0 = x0.min(x - vx);
+        y0 = y0.min(y - vy);
+        x1 = x1.max(x - vx + w_);
+        y1 = y1.max(y - vy + h_);
+    }
+    let x0 = x0.max(0);
+    let y0 = y0.max(0);
+    let x1 = x1.min(vw).max(x0 + 1);
+    let y1 = y1.min(vh).max(y0 + 1);
+    (x0, y0, x1 - x0, y1 - y0)
 }
 
 /// Resample a source rect of a frame into a new top-down BGRA buffer: box-average when

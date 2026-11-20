@@ -6,7 +6,7 @@
 //! Switching sessions stops the old worker, CloseDesktop, and attaches the new desktop.
 //! Read-only on the hidden desktop; host fg/cursor untouched.
 
-use crate::capture::{capture_stitch_focus, crop, resample, Frame};
+use crate::capture::{capture_stitch_focus, content_bbox, crop, resample, Frame};
 use crate::record;
 use crate::registry::Session;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -281,28 +281,6 @@ unsafe fn state(hwnd: HWND) -> Option<&'static mut AppState> {
     }
 }
 
-fn content_bbox(f: &Frame) -> (i32, i32, i32, i32) {
-    let (vx, vy, vw, vh) = f.virtual_screen;
-    if f.windows.is_empty() {
-        return (0, 0, vw, vh);
-    }
-    let mut x0 = i32::MAX;
-    let mut y0 = i32::MAX;
-    let mut x1 = i32::MIN;
-    let mut y1 = i32::MIN;
-    for w in &f.windows {
-        let (x, y, w_, h_) = w.rect;
-        x0 = x0.min(x - vx);
-        y0 = y0.min(y - vy);
-        x1 = x1.max(x - vx + w_);
-        y1 = y1.max(y - vy + h_);
-    }
-    let x0 = x0.max(0);
-    let y0 = y0.max(0);
-    let x1 = x1.min(vw).max(x0 + 1);
-    let y1 = y1.min(vh).max(y0 + 1);
-    (x0, y0, x1 - x0, y1 - y0)
-}
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {

@@ -835,3 +835,13 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 - **实测**：新增 `test_page_localized_keeps_ids_enums_and_offline`（17 个 id 齐全、中文标签齐全、四态+风险 raw 仍在、无 `src/href=http(s)`、无 `@import`/`url(http`）⇒ 全基线 **359 passed/1 skipped**。浏览器 DOM+交互复验：5 面板中文标题、2 会话卡（微信 20h13m / Trae 3h35m，端口 9333）、8 能力行、limit 120 ⇒ 313 事件且过滤 无干扰 38 / 有干扰 149 / 失败 2 / 未确认 8 / 捕获 47、wechat 未勾选 ⇒ 中文门控提示（raw 在 title）、trae 快照 3151×1802 渲染且 `zero_interference_observed=true`（63–94ms）、无横向溢出、console 仅预期的 403。**未做像素级目视**：in-app viewport 隐藏（526×554）⇒截图 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，宽屏 7/5 分栏仅按 CSS 规则核验。
 - **资源观测（同日实测，回答「需不需要优化」）**：中间件自身很轻——`gbmirror` 1 进程 **WS 21MB**、累计 CPU 489.7s（≈0.3 核）；占用大头是真实应用（Trae 34 进程 WS 5558MB、python 7 进程 1457MB、WeChatAppEx 1136MB、Weixin 531MB），主机 32GB 内存已用 91%、CPU 54%。结论：**无需紧急优化**，可选 `--fps 15` 降帧、最小化时暂停捕获、事件流按 mtime 缓存；**不为省内存杀保活会话**（会丢登录态）。
 - 本轮镜像窗口进程已自行退出（exit 0，status age>5s）⇒dashboard 如实显示「已停止」，未自动重启（避免在用户主机弹出最大化窗口）。
+
+### 29.2 web 上一键打开/关闭原生镜像窗口（2026-11-20，用户指出「web 上没有打开那个镜像窗口的功能」）
+
+原来 web 只有单帧快照，原生镜像窗口只能命令行起。新增**显式按钮**控制，并如实修正边界：dashboard 不再是「纯只读」，而是「观测只读 + 一个用户显式触发的主机可见动作」。
+
+- **端点**：`POST /api/mirror/open?width=&fps=`（`subprocess.Popen` + `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP`，不随 server 退出而死）、`POST /api/mirror/close`。GET 仍全部只读；`/api/mirror` 增 `exe_built`/`launched_by_dashboard`。
+- **启动即实测**：Popen 前取主机 fg/光标基线，之后 1.5s 内 5ms 轮询采样，`interference_summary` 给出 `fg_switches`/`max_disp_during`/`cursor_displacement`/`zero_interference_observed`，UI 原样回显（**不声称零干扰**，并注明 <2ms 轮询盲区）。
+- **关闭安全门**：目标 pid 取自 status 导出或本页启动记录，且 `QueryFullProcessImageNameW` 映像名**必须是 `gbmirror.exe`**，否则 403 拒绝（保活会话 wechat/trae 永不可能被这条路径杀掉）；先 `EnumWindows`+`PostMessageW(WM_CLOSE)` 优雅退出（录制得以收尾），4s 未退才 `TerminateProcess`，回显 `graceful`/`forced`。
+- **实测（真实点击，非模拟）**：打开 ⇒ pid 73148、`EnumWindows` 核实主窗 hwnd 24906950 **visible=true**、最大化 rect (-7,-7,2055,1159)、标题 `GUIBridge hidden-desktop mirror (Rust…)`；status 导出 running=true、fps≈32.8、seq 递增；**主机前台仍是浏览器（Edge pid 61972）、1.5s 窗口内前台切换 0 次、光标最大位移 0px** ⇒ 打开可见窗口这件事本身实测未抢前台（窗口在浏览器之后）。关闭 ⇒ `WM_CLOSE 优雅退出`、进程消失（tasklist 无 gbmirror）、status age>5s 判停止、按钮态随之翻转；**两个保活会话 pid 70788/72876 仍 alive**。
+- **单测**：新增 7 例（launch_args 钳位、interference_summary 切换/位移计数含空样本、running_mirror_pid 拒绝 Weixin.exe 映像、close 拒绝非 gbmirror 目标且绝不发消息、close 未运行 409、open 已运行不重复 Popen、open 未构建 500）+ 页面守护测试扩到新按钮 id/中文标签 ⇒ 全基线 **366 passed/1 skipped**。Rust 侧把 `content_bbox` 与 BMP 编码抽到 `capture.rs`（`bmp_bytes`/`content_bbox` 公有，`write_bmp` 复用），`cargo build --release --offline` 通过，为 §29.3 管道流做准备。
