@@ -822,3 +822,16 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 - **边界**：不碰 `apps/desktop-agent`（FastAPI/api.md 引擎控制面=冻结契约，改它须双人 approve）；能力表仅读。快照为只读零干扰重测（每次调用返回 `zero_interference_observed`）。
 - **实测**：9 单测（含 `"state"` 为 dict 时集合成员测试 TypeError 的回归）；全基线 **358 passed/1 skipped**。浏览器结构+交互验证：2 会话卡、镜像 running fps≈36、8 能力行、313 事件（过滤 with-interf 149 / no-interf 38 / capture 47）、wechat 无 confirm 403 + 勾选框显现、trae 快照渲染 3151×1802 且 zero_interference=true、console 无错误。in-app 浏览器 viewport 隐藏⇒用 DOM/evaluate 验证而非像素截图（如实注明）。
 - 运行：`python -X utf8 src/probe/gbdash.py [--port 8710]`。
+
+### 29.1 视觉重设计 + 汉化（2026-11-20，frontend-design skill）
+
+用户反馈「现在的太丑了」+「能汉化的汉化」。装官方 `frontend-design` skill 后按其指引重做内嵌 `PAGE`（**仍是单文件 stdlib、零外链、离线可跑**，端点/元素 id/JS 数据流全部不变）。
+
+- **美学方向=工业仪表盘（industrial instrument console）**：深石墨底 + 琥珀 `#ffb020` 主信号色 + 磷光绿 `#3ddc84`（无干扰）/ 红 `#ff6a5e`（干扰·录制）；蓝图网格 + 双径向辉光 + SVG `feTurbulence` 颗粒叠层（data URI，非外链）；面板四角琥珀刻线、编号 `01…05`、虚线分隔 kv、等宽表格数字（`tabular-nums`）。
+- **字体（离线约束⇒只用本机已装字体，不用 CDN webfont）**：display=`Bahnschrift SemiCondensed`（DIN 系工业字），正文=`Microsoft YaHei UI`，数字/标识=`Cascadia Mono`/`Consolas`。`document.fonts.check` 三者均 true。刻意避开 Inter/Roboto/Arial/紫渐变。
+- **构图**：12 列网格，宽屏 会话 span7 / 镜像 span5 非对称，其余通栏；≤1080px 全部堆叠。记忆点=镜像面板 **42px 大号帧率读数** + 呼吸 LED（存活绿 2.4s / 录制红 1.1s）；载入 staggered rise（`--i`×80ms）、刷新时时间戳琥珀闪一下、行 hover 左侧琥珀条；`prefers-reduced-motion` 全关动画。
+- **汉化范围**：面板标题/提示、表头（应用·操作·影响·幂等·通道（实测风险）·证据 / 运行·文件·路径·状态·判定·光标位移·焦点·外部输入·检出率）、kv（类型·隐藏桌面·进程/窗口·调试端口·已运行·当前会话·帧序号·状态延迟·录制·录像文件）、徽章（存活/已退出/运行中/已停止/录制中/未录制/无干扰/有干扰/失败/未确认/切换/有污染/零干扰）、按钮与空态、快照元信息（零干扰观测/耗时/内容框）、后端错误经 `ERR_ZH` 映射为中文（原始英文留 `title` 便于排障，API 契约字符串不改）。
+- **保留原始枚举为技术标识**：四态 raw 值出现在筛选 option 文本、事件表状态格下方 `.raw` 小字、徽章 `title`，并新增可折叠「状态字典（四态原始枚举）」；通道风险 chip 显示中文（无干扰/焦点切换/物理输入/未测量）+ `title` 存 raw（`none`/`focus_switch`/`physical_input`/`unknown`）；verdict 为探针自定义标识，按原样显示。
+- **实测**：新增 `test_page_localized_keeps_ids_enums_and_offline`（17 个 id 齐全、中文标签齐全、四态+风险 raw 仍在、无 `src/href=http(s)`、无 `@import`/`url(http`）⇒ 全基线 **359 passed/1 skipped**。浏览器 DOM+交互复验：5 面板中文标题、2 会话卡（微信 20h13m / Trae 3h35m，端口 9333）、8 能力行、limit 120 ⇒ 313 事件且过滤 无干扰 38 / 有干扰 149 / 失败 2 / 未确认 8 / 捕获 47、wechat 未勾选 ⇒ 中文门控提示（raw 在 title）、trae 快照 3151×1802 渲染且 `zero_interference_observed=true`（63–94ms）、无横向溢出、console 仅预期的 403。**未做像素级目视**：in-app viewport 隐藏（526×554）⇒截图 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，宽屏 7/5 分栏仅按 CSS 规则核验。
+- **资源观测（同日实测，回答「需不需要优化」）**：中间件自身很轻——`gbmirror` 1 进程 **WS 21MB**、累计 CPU 489.7s（≈0.3 核）；占用大头是真实应用（Trae 34 进程 WS 5558MB、python 7 进程 1457MB、WeChatAppEx 1136MB、Weixin 531MB），主机 32GB 内存已用 91%、CPU 54%。结论：**无需紧急优化**，可选 `--fps 15` 降帧、最小化时暂停捕获、事件流按 mtime 缓存；**不为省内存杀保活会话**（会丢登录态）。
+- 本轮镜像窗口进程已自行退出（exit 0，status age>5s）⇒dashboard 如实显示「已停止」，未自动重启（避免在用户主机弹出最大化窗口）。

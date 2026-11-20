@@ -299,134 +299,389 @@ class Handler(BaseHTTPRequestHandler):
 
 
 PAGE = """<!doctype html>
-<html lang="zh"><head><meta charset="utf-8">
+<html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GUIBridge 观测台</title>
 <style>
-:root{color-scheme:dark}
+:root{
+  color-scheme:dark;
+  --bg:#080a0d; --panel:#0f141a; --panel2:#0b1015; --sunk:#070a0d;
+  --line:#1c242c; --line2:#2a353f;
+  --ink:#e9eff5; --dim:#93a1ae; --faint:#61707d;
+  --amber:#ffb020; --amber-soft:rgba(255,176,32,.12); --amber-line:rgba(255,176,32,.38);
+  --green:#3ddc84; --green-soft:rgba(61,220,132,.12);
+  --red:#ff6a5e; --red-soft:rgba(255,106,94,.12);
+  --slate-soft:rgba(147,161,174,.1);
+  --display:"Bahnschrift SemiCondensed","Bahnschrift","DIN Alternate","Microsoft YaHei UI",sans-serif;
+  --body:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Hiragino Sans GB",sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code","Consolas","SF Mono",monospace;
+}
 *{box-sizing:border-box}
-body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 "Segoe UI",system-ui,sans-serif}
-header{padding:14px 20px;background:#161b22;border-bottom:1px solid #30363d;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
-header h1{font-size:17px;margin:0}
-header .sub{color:#8b949e;font-size:12px}
-main{padding:18px 20px;display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
-section{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px}
-section.wide{grid-column:1/-1}
-h2{font-size:13px;margin:0 0 10px;color:#8b949e;text-transform:uppercase;letter-spacing:.06em}
-.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-.card{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px}
-.card .name{font-weight:600;font-size:15px}
-.kv{display:flex;justify-content:space-between;gap:8px;color:#8b949e;font-size:12px;margin-top:3px}
-.kv b{color:#e6edf3;font-weight:500;word-break:break-all}
-.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.ok{background:#12261e;color:#3fb950;border:1px solid #238636}
-.warn{background:#2b2110;color:#d29922;border:1px solid #9e6a03}
-.bad{background:#2d1517;color:#f85149;border:1px solid #da3633}
-.mut{background:#21262d;color:#8b949e;border:1px solid #30363d}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.6 var(--body);-webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(900px 420px at 12% -8%,rgba(255,176,32,.09),transparent 70%),
+    radial-gradient(700px 380px at 96% 4%,rgba(61,220,132,.05),transparent 72%),
+    repeating-linear-gradient(0deg,rgba(147,161,174,.045) 0 1px,transparent 1px 34px),
+    repeating-linear-gradient(90deg,rgba(147,161,174,.045) 0 1px,transparent 1px 34px);
+}
+.grain{
+  position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.04;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+::selection{background:var(--amber);color:#0a0c0f}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--sunk)}
+::-webkit-scrollbar-thumb{background:#212b34;border:2px solid var(--sunk);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:#33414d}
+
+/* ---------- header ---------- */
+.top{
+  position:relative;z-index:2;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  padding:16px 26px 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(15,20,26,.96),rgba(8,10,13,.86));
+  backdrop-filter:blur(6px);
+}
+.mark{display:flex;align-items:center;gap:13px;min-width:0}
+.mark svg{flex:none;filter:drop-shadow(0 0 10px rgba(255,176,32,.35))}
+.mark h1{
+  margin:0;font:600 25px/1 var(--display);letter-spacing:.2em;color:var(--ink);
+  text-transform:uppercase;
+}
+.mark h1 em{font-style:normal;color:var(--amber)}
+.mark p{margin:5px 0 0;font-size:11.5px;color:var(--faint);letter-spacing:.14em}
+.strip{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.chip{
+  display:flex;align-items:baseline;gap:7px;padding:5px 11px;
+  border:1px solid var(--line2);background:var(--panel2);border-radius:3px;
+}
+.chip span{font-size:10.5px;color:var(--faint);letter-spacing:.1em}
+.chip b{font:600 15px/1 var(--display);color:var(--amber);letter-spacing:.04em}
+.ctl{display:flex;align-items:center;gap:14px}
+#ts{font:11.5px/1 var(--mono);color:var(--faint);letter-spacing:.02em}
+#ts.flash{animation:flash .7s ease-out}
+@keyframes flash{0%{color:var(--amber)}100%{color:var(--faint)}}
+.toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);cursor:pointer;user-select:none}
+.toggle input{accent-color:var(--amber);width:14px;height:14px;cursor:pointer}
+
+/* ---------- layout ---------- */
+main{
+  position:relative;z-index:1;display:grid;grid-template-columns:repeat(12,1fr);
+  gap:16px;padding:20px 26px 8px;align-items:start;
+}
+.panel{
+  position:relative;grid-column:span 12;padding:16px 18px 18px;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);border-radius:4px;
+  box-shadow:0 18px 40px -28px #000,inset 0 1px 0 rgba(255,255,255,.025);
+  animation:rise .55s cubic-bezier(.2,.75,.2,1) both;animation-delay:calc(var(--i,0)*80ms);
+}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.panel::before,.panel::after{
+  content:"";position:absolute;width:11px;height:11px;border:1px solid var(--amber);opacity:.45;pointer-events:none;
+}
+.panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.p7{grid-column:span 7}.p5{grid-column:span 5}
+.phead{display:flex;align-items:center;gap:11px;padding-bottom:11px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.idx{font:600 11px/1 var(--mono);color:var(--amber);letter-spacing:.1em;padding-top:2px}
+.phead h2{margin:0;font:600 15px/1.2 var(--display);letter-spacing:.14em;color:var(--ink)}
+.hint{margin-left:auto;font-size:11px;color:var(--faint);letter-spacing:.04em;text-align:right}
+
+/* ---------- cards / readouts ---------- */
+.cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(238px,1fr))}
+.card{
+  position:relative;padding:12px 14px 13px 16px;background:var(--sunk);
+  border:1px solid var(--line);border-radius:3px;overflow:hidden;
+  transition:border-color .18s,transform .18s;
+}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--green);opacity:.75}
+.card.dead::before{background:var(--faint);opacity:.5}
+.card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.cardhead{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.cardhead h3{margin:0;font:600 16px/1.2 var(--display);letter-spacing:.06em}
+.cardhead .badge{margin-left:auto}
+.led{flex:none;width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.led.live{background:var(--green);box-shadow:0 0 0 0 rgba(61,220,132,.55);animation:beat 2.4s infinite}
+.led.rec{background:var(--red);box-shadow:0 0 9px rgba(255,106,94,.8);animation:beat 1.1s infinite}
+@keyframes beat{0%{box-shadow:0 0 0 0 rgba(61,220,132,.5)}70%{box-shadow:0 0 0 7px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:3px 0;border-top:1px dashed rgba(147,161,174,.1)}
+.kv:first-of-type{border-top:0}
+.kv span{font-size:11.5px;color:var(--faint);letter-spacing:.05em;flex:none}
+.kv b{font:500 12px/1.5 var(--mono);color:var(--ink);word-break:break-all;text-align:right}
+.gauge{display:flex;align-items:flex-end;gap:22px;padding:2px 0 14px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+.readout{display:flex;flex-direction:column;gap:3px}
+.readout .num{font:600 42px/.9 var(--display);letter-spacing:.02em;color:var(--amber);text-shadow:0 0 22px rgba(255,176,32,.28)}
+.readout.sm .num{font-size:26px;color:var(--ink);text-shadow:none}
+.readout .unit{font-size:10.5px;color:var(--faint);letter-spacing:.16em}
+.gauge .state{margin-left:auto;display:flex;align-items:center;gap:8px;padding-bottom:6px}
+
+/* ---------- badges ---------- */
+.badge{
+  display:inline-block;padding:1px 7px;border-radius:2px;border:1px solid;
+  font:600 11px/1.6 var(--body);letter-spacing:.03em;white-space:nowrap;
+}
+.ok{background:var(--green-soft);color:var(--green);border-color:rgba(61,220,132,.4)}
+.warn{background:var(--amber-soft);color:var(--amber);border-color:var(--amber-line)}
+.bad{background:var(--red-soft);color:var(--red);border-color:rgba(255,106,94,.4)}
+.mut{background:var(--slate-soft);color:var(--dim);border-color:var(--line2)}
+.raw{display:block;font:10px/1.5 var(--mono);color:var(--faint);word-break:break-all}
+code{font:11px/1.5 var(--mono);background:rgba(147,161,174,.09);border:1px solid var(--line);padding:0 4px;border-radius:2px;color:var(--dim)}
+.dash{color:var(--faint)}
+
+/* ---------- tables ---------- */
+.scroll{max-height:366px;overflow:auto;border:1px solid var(--line);border-radius:3px;background:var(--sunk)}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #21262d;vertical-align:top}
-th{color:#8b949e;font-weight:600;position:sticky;top:0;background:#161b22}
-.scroll{max-height:340px;overflow:auto}
-button,select{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
-button:hover{background:#30363d}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-img.snap{max-width:100%;border:1px solid #30363d;border-radius:6px;background:#000}
-.note{color:#8b949e;font-size:12px;margin-top:8px}
-.priv{color:#d29922;font-size:12px}
-code{background:#21262d;padding:0 4px;border-radius:4px;font-size:11px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid rgba(28,36,44,.9);vertical-align:top}
+th{
+  position:sticky;top:0;z-index:1;background:#0d1217;color:var(--faint);
+  font:600 10.5px/1.5 var(--body);letter-spacing:.12em;white-space:nowrap;
+  border-bottom:1px solid var(--line2);
+}
+tbody tr{transition:background .14s}
+tbody tr:hover{background:rgba(255,176,32,.045);box-shadow:inset 2px 0 0 var(--amber)}
+td .badge{margin:0 3px 2px 0}
+.chan{display:inline-flex;align-items:center;gap:5px;margin:0 8px 4px 0;padding:2px 6px;border:1px solid var(--line);border-radius:2px;background:rgba(147,161,174,.04)}
+.chan code{border:0;background:none;padding:0;color:var(--ink);font-size:11px}
+.chan i{font-style:normal;font-size:10.5px;letter-spacing:.03em}
+.chan i.ok{color:var(--green)}.chan i.warn{color:var(--amber)}.chan i.bad{color:var(--red)}.chan i.mut{color:var(--faint)}
+.num{font-family:var(--mono)}
+
+/* ---------- controls ---------- */
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+button,select{
+  font:500 12px/1.4 var(--body);color:var(--ink);background:#131a21;
+  border:1px solid var(--line2);border-radius:3px;padding:6px 11px;cursor:pointer;
+  transition:background .16s,border-color .16s,transform .08s;
+}
+select{appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2393a1ae'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center}
+button:hover,select:hover{border-color:var(--amber-line);background:#182029}
+button:active{transform:translateY(1px)}
+button.primary{background:var(--amber);border-color:var(--amber);color:#0a0c0f;font-weight:700;letter-spacing:.06em}
+button.primary:hover{background:#ffc44d;border-color:#ffc44d}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.count{font:11.5px/1 var(--mono);color:var(--faint);letter-spacing:.03em}
+.priv{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--amber);cursor:pointer}
+.priv input{accent-color:var(--amber);width:14px;height:14px}
+.note{font-size:11.5px;color:var(--faint);line-height:1.7;margin-top:10px}
+.note b{color:var(--dim);font-weight:600}
+details{margin-top:11px;border-top:1px dashed rgba(147,161,174,.14);padding-top:9px}
+summary{cursor:pointer;font-size:11.5px;color:var(--dim);letter-spacing:.06em;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸ ";color:var(--amber)}
+details[open] summary::before{content:"▾ "}
+.dict{display:grid;gap:6px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:9px}
+.dict div{display:flex;align-items:center;gap:8px}
+
+/* ---------- snapshot ---------- */
+.snapframe{position:relative;margin-top:4px;border:1px solid var(--line2);border-radius:3px;background:#000;padding:6px}
+.snapframe::before,.snapframe::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--amber);opacity:.6}
+.snapframe::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.snapframe::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+img.snap{display:block;max-width:100%;border-radius:2px;animation:fade .4s ease-out}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.capbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 2px 0;font:11.5px/1.5 var(--mono);color:var(--dim)}
+.empty{padding:22px 14px;text-align:center;color:var(--faint);font-size:12px;border:1px dashed var(--line2);border-radius:3px;background:var(--sunk)}
+footer{
+  position:relative;z-index:1;display:flex;gap:18px;flex-wrap:wrap;align-items:center;
+  padding:14px 26px 26px;color:var(--faint);font-size:11px;letter-spacing:.04em;
+}
+footer .sep{width:1px;height:12px;background:var(--line2)}
+@media (max-width:1080px){
+  .p7,.p5{grid-column:span 12}
+  .strip{margin-left:0;order:3;width:100%}
+  main{padding:16px}
+  .top{padding:14px 16px}
+  footer{padding:12px 16px 22px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
-<header><h1>GUIBridge 观测台</h1>
-<span class="sub">localhost 只读 · 不写引擎/契约/会话</span>
-<span class="sub" id="ts"></span>
-<span class="sub"><label><input type="checkbox" id="auto" checked> 3s 自动刷新</label></span>
+<div class="grain" aria-hidden="true"></div>
+<header class="top">
+  <div class="mark">
+    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+      <path d="M2 22h26M5 22V13M25 22V13M2 13c6-8 20-8 26 0" fill="none" stroke="#ffb020" stroke-width="1.6"/>
+      <circle cx="15" cy="8.4" r="2.1" fill="#3ddc84"/>
+      <path d="M10 22v-4M15 22v-6M20 22v-4" stroke="#93a1ae" stroke-width="1.2"/>
+    </svg>
+    <div>
+      <h1>GUI<em>Bridge</em></h1>
+      <p>语义 GUI 控制中间件 · 只读观测台</p>
+    </div>
+  </div>
+  <div class="strip">
+    <div class="chip"><span>存活会话</span><b id="hSessions">—</b></div>
+    <div class="chip"><span>镜像帧率</span><b id="hMirror">—</b></div>
+    <div class="chip"><span>事件记录</span><b id="hEvents">—</b></div>
+  </div>
+  <div class="ctl">
+    <span id="ts" aria-live="polite">连接中…</span>
+    <label class="toggle"><input type="checkbox" id="auto" checked> 3 秒自动刷新</label>
+  </div>
 </header>
 <main>
-<section><h2>保活会话</h2><div class="cards" id="sessions"></div></section>
-<section><h2>镜像 / 录制</h2><div id="mirror"></div></section>
-<section class="wide"><h2>能力表（frozen）+ 待评审提案</h2>
-<div class="scroll"><table id="cap"></table></div>
-<div class="note" id="props"></div></section>
-<section class="wide"><h2>FocusGuard / 捕获 事件流</h2>
-<div class="row"><select id="filter">
-<option value="">全部状态</option>
-<option>success_no_interference_observed</option>
-<option>success_with_interference</option>
-<option>failed</option><option>unconfirmed</option>
-<option value="__capture">捕获/verdict</option>
-</select><select id="limit"><option>30</option><option>60</option><option>120</option></select>
-<button id="reload">刷新</button><span class="note" id="evcount"></span></div>
-<div class="scroll"><table id="events"></table></div></section>
-<section class="wide"><h2>按需快照（只读·零干扰重测）</h2>
-<div class="row"><select id="snapsess"></select>
-<label class="priv" id="privwrap" hidden><input type="checkbox" id="confirm"> 我确认查看微信私聊画面</label>
-<button id="snap">抓取快照</button><span class="note" id="snapmeta"></span></div>
-<img class="snap" id="snapimg" hidden alt="snapshot">
-<div class="note">快照为单帧 PrintWindow 拼接，调用后 BMP 立即删除；微信需显式确认。实时画面请用原生镜像窗口。</div>
-</section>
+  <section class="panel p7" style="--i:0">
+    <div class="phead"><span class="idx">01</span><h2>保活会话</h2><span class="hint">隐藏桌面第二实例 · 主机零干扰</span></div>
+    <div class="cards" id="sessions"></div>
+  </section>
+  <section class="panel p5" style="--i:1">
+    <div class="phead"><span class="idx">02</span><h2>镜像 / 录制</h2><span class="hint">gbmirror 状态导出</span></div>
+    <div id="mirror"></div>
+  </section>
+  <section class="panel" style="--i:2">
+    <div class="phead"><span class="idx">03</span><h2>能力表与待评审提案</h2><span class="hint">冻结契约 · 风险按实测声明</span></div>
+    <div class="scroll"><table id="cap"></table></div>
+    <div class="note" id="props"></div>
+  </section>
+  <section class="panel" style="--i:3">
+    <div class="phead"><span class="idx">04</span><h2>FocusGuard 事件流</h2><span class="hint">四态判定 · 事件钩子证据</span></div>
+    <div class="row">
+      <select id="filter" aria-label="按状态筛选">
+        <option value="">全部状态</option>
+        <option value="success_no_interference_observed">无干扰 · success_no_interference_observed</option>
+        <option value="success_with_interference">有干扰 · success_with_interference</option>
+        <option value="failed">失败 · failed</option>
+        <option value="unconfirmed">未确认 · unconfirmed</option>
+        <option value="__capture">捕获 / 判定记录</option>
+      </select>
+      <select id="limit" aria-label="读取最近运行数">
+        <option value="30">最近 30 次运行</option>
+        <option value="60">最近 60 次运行</option>
+        <option value="120">最近 120 次运行</option>
+      </select>
+      <button id="reload">刷新事件</button>
+      <span class="count" id="evcount"></span>
+    </div>
+    <div class="scroll"><table id="events"></table></div>
+    <details>
+      <summary>状态字典（四态原始枚举）</summary>
+      <div class="dict">
+        <div><span class="badge ok">无干扰</span><code>success_no_interference_observed</code></div>
+        <div><span class="badge warn">有干扰</span><code>success_with_interference</code></div>
+        <div><span class="badge bad">失败</span><code>failed</code></div>
+        <div><span class="badge mut">未确认</span><code>unconfirmed</code></div>
+      </div>
+      <div class="note">干扰判定以 <b>SetWinEventHook 前台事件</b> 为准；2ms 轮询存在理论盲区，外部输入污染的运行弃用但保留原始文件。</div>
+    </details>
+  </section>
+  <section class="panel" style="--i:4">
+    <div class="phead"><span class="idx">05</span><h2>按需快照</h2><span class="hint">单帧只读 · 每次调用重测零干扰</span></div>
+    <div class="row">
+      <select id="snapsess" aria-label="选择会话"></select>
+      <label class="priv" id="privwrap" hidden><input type="checkbox" id="confirm"> 我确认查看微信私聊画面</label>
+      <button id="snap" class="primary">抓取快照</button>
+      <span class="count" id="snapmeta"></span>
+    </div>
+    <div class="snapframe" id="snapwrap" hidden><img class="snap" id="snapimg" alt="隐藏桌面单帧快照"></div>
+    <div class="note">快照为 <b>PrintWindow 单帧拼接</b>，读取后 BMP 立即删除，磁盘不留可读画面；微信含私聊，须显式确认。实时画面请使用原生镜像窗口。</div>
+  </section>
 </main>
+<footer>
+  <span>只读边界：不写引擎 / 冻结能力表 / 保活会话</span><span class="sep"></span>
+  <span>仅绑定 127.0.0.1</span><span class="sep"></span>
+  <span>数据源 <code>var/experiments</code> · <code>packages/routing/capabilities.draft.yaml</code> · <code>docs/proposals</code></span>
+</footer>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const badge=(t,c)=>`<span class="badge ${c}">${esc(t)}</span>`;
-function stateBadge(s){if(!s)return '';
- if(s==='success_no_interference_observed')return badge('no-interf','ok');
- if(s==='success_with_interference')return badge('interf','warn');
- if(s==='failed')return badge('failed','bad');
- if(s==='unconfirmed')return badge('unconf','mut');
- return badge(s,'mut');}
+const badge=(t,c,title)=>`<span class="badge ${c}"${title?` title="${esc(title)}"`:''}>${esc(t)}</span>`;
+const STATE={
+  success_no_interference_observed:['无干扰','ok'],
+  success_with_interference:['有干扰','warn'],
+  failed:['失败','bad'],
+  unconfirmed:['未确认','mut']
+};
+const RISK={none:'无干扰',focus_switch:'焦点切换',physical_input:'物理输入',logical_only:'仅逻辑',unknown:'未测量'};
+const KIND={wechat:'微信',trae:'Trae'};
+const ERR_ZH=[
+ [/wechat snapshot exposes private chats/i,'微信快照含私聊画面，请先勾选「我确认查看微信私聊画面」'],
+ [/session not alive/i,'会话已退出，无法抓取快照'],
+ [/unknown session/i,'未知会话'],
+ [/gbmirror.exe not built/i,'gbmirror.exe 尚未构建（cargo build --release）'],
+ [/capture produced no bmp/i,'截图未生成 BMP'],
+ [/not found/i,'接口不存在']
+];
+const zhErr=m=>{for(const pair of ERR_ZH)if(pair[0].test(m))return pair[1];return m;};
+function stateBadge(s){if(!s)return '';const m=STATE[s];return m?badge(m[0],m[1],s):badge(s,'mut',s);}
+function riskChip(ch){
+  if(!ch.supported)return `<span class="chan"><code>${esc(ch.channel)}</code><i class="mut">不支持</i></span>`;
+  const r=ch.risk||'unknown';const cls=r==='none'?'ok':(r==='unknown'?'mut':(r==='physical_input'?'bad':'warn'));
+  return `<span class="chan"><code>${esc(ch.channel)}</code><i class="${cls}" title="${esc(r)}">${esc(RISK[r]||r)}</i></span>`;
+}
+const dash=v=>(v===null||v===undefined||v==='')?'<span class="dash">—</span>':esc(v);
 async function j(p){const r=await fetch(p);if(!r.ok)throw new Error((await r.json()).error||r.status);return r.json();}
 let SESSIONS=[];
 async function loadSessions(){const d=await j('/api/sessions');SESSIONS=d.sessions;
- $('sessions').innerHTML=d.sessions.map(s=>`<div class="card">
-  <div class="name">${esc(s.name)} ${s.alive?badge('alive','ok'):badge('dead','bad')}</div>
-  <div class="kv"><span>kind</span><b>${esc(s.kind)}</b></div>
-  <div class="kv"><span>desktop</span><b>${esc(s.desktop)}</b></div>
-  <div class="kv"><span>pid / hwnd</span><b>${esc(s.pid)} / ${esc(s.hwnd)}</b></div>
-  <div class="kv"><span>port</span><b>${esc(s.port??'—')}</b></div>
-  <div class="kv"><span>uptime</span><b>${esc(s.uptime??'—')}</b></div></div>`).join('')||'<div class="note">无会话</div>';
+ $('hSessions').textContent=d.sessions.filter(s=>s.alive).length+' / '+d.sessions.length;
+ $('sessions').innerHTML=d.sessions.map(s=>`<article class="card${s.alive?'':' dead'}">
+  <div class="cardhead"><span class="led${s.alive?' live':''}"></span><h3>${esc(s.name)}</h3>
+   ${s.alive?badge('存活','ok','alive'):badge('已退出','bad','dead')}</div>
+  <div class="kv"><span>类型</span><b title="${esc(s.kind)}">${esc(KIND[s.kind]||s.kind)}</b></div>
+  <div class="kv"><span>隐藏桌面</span><b>${esc(s.desktop)}</b></div>
+  <div class="kv"><span>进程 / 窗口</span><b>${esc(s.pid)} / ${esc(s.hwnd)}</b></div>
+  <div class="kv"><span>调试端口</span><b>${dash(s.port)}</b></div>
+  <div class="kv"><span>已运行</span><b>${dash(s.uptime)}</b></div></article>`).join('')
+  ||'<div class="empty">暂无保活会话</div>';
  const sel=$('snapsess');const cur=sel.value;
- sel.innerHTML=d.sessions.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+ sel.innerHTML=d.sessions.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}${s.alive?'':'（已退出）'}</option>`).join('');
  if(cur&&d.sessions.some(s=>s.name===cur))sel.value=cur; else if(d.sessions.some(s=>s.name==='trae'))sel.value='trae';
  syncPriv();}
 function syncPriv(){const s=SESSIONS.find(x=>x.name===$('snapsess').value);
  $('privwrap').hidden=!(s&&s.kind==='wechat'); if($('privwrap').hidden)$('confirm').checked=false;}
 async function loadMirror(){const m=await j('/api/mirror');
- $('mirror').innerHTML=`<div class="card">
-  <div class="name">gbmirror ${m.running?badge('running','ok'):badge('stopped','bad')}</div>
-  <div class="kv"><span>current</span><b>${esc(m.current??'—')}</b></div>
-  <div class="kv"><span>desktop</span><b>${esc(m.desktop??'—')}</b></div>
-  <div class="kv"><span>fps / zoom</span><b>${m.fps?m.fps.toFixed(1):'—'} / ${m.zoom??'—'}x</b></div>
-  <div class="kv"><span>frames</span><b>${esc(m.seq??'—')}</b></div>
-  <div class="kv"><span>status age</span><b>${esc(m.age_s??'—')}s</b></div>
-  <div class="kv"><span>REC</span><b>${m.rec_on?badge('on','bad'):badge('off','mut')} ${esc(m.rec_info??'')}</b></div>
-  <div class="kv"><span>rec mp4</span><b>${m.rec_size?(m.rec_size/1024).toFixed(0)+' KB':'—'}</b></div></div>`;}
+ $('hMirror').textContent=m.running&&m.fps?m.fps.toFixed(1):'停止';
+ const size=m.rec_size?(m.rec_size>1048576?(m.rec_size/1048576).toFixed(1)+' MB':(m.rec_size/1024).toFixed(0)+' KB'):'—';
+ $('mirror').innerHTML=`<div class="gauge">
+   <div class="readout"><span class="num">${m.running&&m.fps?m.fps.toFixed(1):'0.0'}</span><span class="unit">帧 / 秒</span></div>
+   <div class="readout sm"><span class="num">${m.zoom??'1'}×</span><span class="unit">缩放</span></div>
+   <div class="state"><span class="led${m.running?' live':''}"></span>${m.running?badge('运行中','ok','running'):badge('已停止','bad','stopped')}</div>
+  </div>
+  <div class="kv"><span>当前会话</span><b>${dash(m.current)}</b></div>
+  <div class="kv"><span>隐藏桌面</span><b>${dash(m.desktop)}</b></div>
+  <div class="kv"><span>帧序号</span><b>${dash(m.seq)}</b></div>
+  <div class="kv"><span>状态延迟</span><b>${m.age_s!=null?esc(m.age_s)+' 秒':'—'}</b></div>
+  <div class="kv"><span>录制</span><b>${m.rec_on?badge('录制中','bad','rec on'):badge('未录制','mut','rec off')} ${esc(m.rec_info??'')}</b></div>
+  <div class="kv"><span>录像文件</span><b>${size}</b></div>`;}
 async function loadCap(){const c=await j('/api/capability');
- $('cap').innerHTML='<tr><th>app</th><th>operation</th><th>impact</th><th>idem</th><th>channels (risk)</th><th>evidence</th></tr>'+
-  c.entries.map(e=>`<tr><td>${esc(e.app)}</td><td>${esc(e.operation)}</td>
-   <td>${e.impact==='high'?badge('high','warn'):badge('low','mut')}</td>
-   <td>${e.idempotent?'yes':'no'}</td>
-   <td>${e.channels.map(ch=>`${esc(ch.channel)}:${ch.supported?badge(ch.risk,ch.risk==='none'?'ok':(ch.risk==='unknown'?'mut':'warn')):badge('off','mut')}`).join(' ')}</td>
-   <td>${e.evidence.length}</td></tr>`).join('');
- $('props').innerHTML='status=<code>'+esc(c.status)+'</code> · 待评审提案: '+
+ $('cap').innerHTML='<thead><tr><th>应用</th><th>操作</th><th>影响</th><th>幂等</th><th>通道（实测风险）</th><th>证据</th></tr></thead><tbody>'+
+  c.entries.map(e=>`<tr><td class="num">${esc(e.app)}</td><td class="num">${esc(e.operation)}</td>
+   <td>${e.impact==='high'?badge('高','warn','high'):badge(e.impact==='low'?'低':e.impact,'mut',e.impact)}</td>
+   <td>${e.idempotent?'<span class="dash">是</span>':'<span style="color:var(--amber)">否</span>'}</td>
+   <td>${e.channels.map(riskChip).join('')||'<span class="dash">—</span>'}</td>
+   <td class="num">${e.evidence.length} 条</td></tr>`).join('')+'</tbody>';
+ $('props').innerHTML='表状态 <code>'+esc(c.status)+'</code> · 待评审提案：'+
   (c.proposals.map(p=>`<code>${esc(p.file)}</code> ${esc(p.title)}`).join(' · ')||'无');}
 let EVENTS=[];
 async function loadEvents(){const d=await j('/api/events?limit='+$('limit').value);EVENTS=d.events;renderEvents();}
 function renderEvents(){const f=$('filter').value;
  const rows=EVENTS.filter(e=>!f||(f==='__capture'?(!e.state&&(e.zero!==null&&e.zero!==undefined||e.verdict)):e.state===f));
- $('evcount').textContent=rows.length+' / '+EVENTS.length+' 条';
- $('events').innerHTML='<tr><th>run</th><th>file·label</th><th>state/verdict</th><th>cursor</th><th>focus</th><th>ext</th><th>rate</th></tr>'+
-  rows.map(e=>`<tr><td><code>${esc(e.run)}</code></td><td>${esc(e.file)}<br><code>${esc(e.label)}</code></td>
-   <td>${stateBadge(e.state)||(e.zero===true?badge('zero-interf','ok'):e.zero===false?badge('interf','warn'):(e.verdict?badge(e.verdict,'mut'):''))}</td>
-   <td>${esc(e.cursor??'—')}</td><td>${e.focus_switch===true?badge('switch','warn'):e.focus_switch===false?'—':esc(e.focus_switch??'—')}</td>
-   <td>${e.external===true?badge('ext','bad'):e.external===false?'—':esc(e.external??'—')}</td>
-   <td>${e.detection_rate!=null?(e.detection_rate*100).toFixed(0)+'%':e.fp_rate!=null?'fp '+(e.fp_rate*100).toFixed(0)+'%':'—'}</td></tr>`).join('');}
+ $('evcount').textContent='显示 '+rows.length+' / 共 '+EVENTS.length+' 条';
+ $('hEvents').textContent=EVENTS.length;
+ $('events').innerHTML='<thead><tr><th>运行</th><th>文件 · 路径</th><th>状态 / 判定</th><th>光标位移</th><th>焦点</th><th>外部输入</th><th>检出率</th></tr></thead><tbody>'+
+  rows.map(e=>`<tr><td><code>${esc(e.run)}</code></td>
+   <td>${esc(e.file)}<span class="raw">${esc(e.label)}</span></td>
+   <td>${stateBadge(e.state)||(e.zero===true?badge('零干扰','ok','zero_interference_observed=true'):e.zero===false?badge('有干扰','warn','zero_interference_observed=false'):(e.verdict?badge(e.verdict,'mut','verdict'):'<span class="dash">—</span>'))}
+    ${e.state?`<span class="raw">${esc(e.state)}</span>`:''}</td>
+   <td class="num">${e.cursor==null?'<span class="dash">—</span>':esc(e.cursor)+' px'}</td>
+   <td>${e.focus_switch===true?badge('切换','warn','unexpected_focus_switch'):e.focus_switch===false?'<span class="dash">无</span>':dash(e.focus_switch)}</td>
+   <td>${e.external===true?badge('有污染','bad','external_input_during_window'):e.external===false?'<span class="dash">无</span>':dash(e.external)}</td>
+   <td class="num">${e.detection_rate!=null?'检出 '+(e.detection_rate*100).toFixed(0)+'%':e.fp_rate!=null?'误报 '+(e.fp_rate*100).toFixed(0)+'%':'<span class="dash">—</span>'}</td></tr>`).join('')+'</tbody>';}
 async function snap(){const s=$('snapsess').value;const conf=$('confirm').checked?1:0;
- $('snapmeta').textContent='抓取中…';$('snapimg').hidden=true;
+ $('snapmeta').textContent='抓取中…';$('snapwrap').hidden=true;
  try{const d=await j(`/api/snapshot?session=${encodeURIComponent(s)}&confirm=${conf}`);
-  $('snapimg').src='data:image/bmp;base64,'+d.image_b64;$('snapimg').hidden=false;
-  $('snapmeta').innerHTML=`zero_interference=${d.zero_interference_observed} · ${d.avg_capture_ms}ms · bbox ${esc(JSON.stringify(d.content_bbox))}`;
- }catch(e){$('snapmeta').textContent='失败: '+e.message;}}
-async function refreshFast(){try{await Promise.all([loadSessions(),loadMirror()]);$('ts').textContent='updated '+new Date().toLocaleTimeString();}catch(e){$('ts').textContent='err '+e.message;}}
+  $('snapimg').src='data:image/bmp;base64,'+d.image_b64;$('snapwrap').hidden=false;
+  $('snapmeta').innerHTML=`零干扰观测=${d.zero_interference_observed} · 耗时 ${d.avg_capture_ms}ms · 内容框 ${esc(JSON.stringify(d.content_bbox))}`;
+ }catch(e){$('snapmeta').textContent='失败：'+zhErr(e.message);$('snapmeta').title=e.message;}}
+async function refreshFast(){try{await Promise.all([loadSessions(),loadMirror()]);
+  const t=$('ts');t.textContent='已更新 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  t.classList.remove('flash');void t.offsetWidth;t.classList.add('flash');
+ }catch(e){$('ts').textContent='错误 '+zhErr(e.message);}}
 $('reload').onclick=loadEvents;$('filter').onchange=renderEvents;$('limit').onchange=loadEvents;
 $('snap').onclick=snap;$('snapsess').onchange=syncPriv;
 loadCap();loadEvents();refreshFast();

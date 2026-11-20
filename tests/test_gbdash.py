@@ -126,3 +126,24 @@ def test_server_binds_loopback_only():
         assert srv.server_address[0] == "127.0.0.1"
     finally:
         srv.server_close()
+
+
+def test_page_localized_keeps_ids_enums_and_offline():
+    import re
+
+    page = gd.PAGE
+    for eid in ("sessions", "mirror", "cap", "props", "events", "evcount", "filter",
+                "limit", "reload", "snapsess", "privwrap", "confirm", "snap",
+                "snapmeta", "snapimg", "ts", "auto"):
+        assert f'id="{eid}"' in page, eid
+    for zh in ("保活会话", "镜像 / 录制", "能力表与待评审提案", "按需快照",
+               "应用", "操作", "影响", "幂等", "通道（实测风险）", "证据",
+               "光标位移", "外部输入", "检出率", "已运行", "调试端口",
+               "无干扰", "有干扰", "未确认", "微信快照含私聊画面"):
+        assert zh in page, zh
+    # raw enums stay visible as technical identifiers (legend / options / tooltips)
+    for raw in gd.FOUR_STATES | {"focus_switch", "physical_input", "unknown", "none"}:
+        assert raw in page, raw
+    # offline: no remote stylesheet/script/font/image fetches (svg xmlns is not a fetch)
+    assert re.search(r"""(?:src|href)\s*=\s*["']https?:""", page) is None
+    assert "@import" not in page and "url(http" not in page
