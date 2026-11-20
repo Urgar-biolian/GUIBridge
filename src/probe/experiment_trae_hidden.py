@@ -147,7 +147,7 @@ def main() -> int:
                                             ("hwnd", "pid", "rect", "title_len", "class")}
             if node:
                 pr = subprocess.run([node, str(READ_SCRIPT), str(args.port)],
-                                    capture_output=True, text=True, timeout=20)
+                                    capture_output=True, text=True, encoding="utf-8", timeout=20)
                 try:
                     payload = json.loads(pr.stdout.strip())
                 except json.JSONDecodeError:

@@ -735,3 +735,12 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **边界（如实）**：全新 profile **未登录/停在首跑 `setup.html`**（`hasChatRoot=false`、`chatLen=0`、`bodyLen=0`）。故「agent 给 Trae 发开发任务→读回复」的**完整链尚未通**：需在隐藏实例完成首跑设置 + 登录（第二 Trae 账户），chat root 出现后现有 `TraeAdapter(port=9333)` 方可 `send_task`/`read_result`。本探针**只读**：未发信、未点 send、未切模式、未输入凭据；登录与写动作须另行授权（agent 模式 live 仅限隔离 demo + 手动审批）。
 - **清理**：仅 `taskkill /T /F` 本探针自启的第二实例树（pid 与主机不同），`CloseDesktop` true，profile 目录用后即删；主机 Trae（90232 等）全程完整。
 - **契约影响**：隐藏桌面 Trae 通道若纳入正式适配器/能力表，属契约数据变更，须提案 + **双人 approve**；本探针不改契约。
+
+### 27.1 保活 + 首跑设置全程 CDP 零干扰可达，但登录在隐藏桌面走不通（E17b）
+
+`hidden_trae_session.py`（保活，持久 profile `var/experiments/hidden_trae_profile` gitignored，端口 9333，附着 reused=true）+ `cdp_dom_dump.mjs`/`cdp_click_text.mjs`/`cdp_login_trace.mjs`（只读 DOM dump / 按文本 CDP 点击 / 网络+控制台 trace）。
+
+- **设置全程可达（实测）**：CDP `Input.dispatchMouseEvent` 逐页点「开始→继续(主题/语言)→继续(快捷键)→跳过(命令行，避免改主机 PATH)→登录墙」，主机前台/光标全程不变。到登录墙后点「跳过」**进入完整工作台** `workbench.html`，标题 `guibridge-demo-workspace - TRAE`、**`hasChatRoot=true`**、文件树显示隔离 demo 工程（受限模式 + 工作区信任弹窗）。⇒ 隐藏 Trae 的 IDE/chat 界面机制可达。
+- **登录卡死（实测负例）**：登录墙「个人用户/企业用户」与工作台「登录」按钮，鼠标事件与 JS `el.click()` 均**只发遥测 POST**（`mcs16-normal-sg.trae.ai/list`），**无 OAuth 请求、无应用内 QR（img/iframe/canvas 全空）、无外部浏览器弹出**（主机仅预存 msedgewebview2 运行时，无新 chrome/msedge/firefox 主进程）。控制台 `[SANDBOX_TO_MAIN_GET_SETUP_PAGE_LOGIN_FAILED_STATUS]`、`unknown service 'logService'`、`boot_config_not_ready`。隐藏桌面 `SetForegroundWindow` 返回 0（非输入桌面无法激活）。
+- **定论**：Trae 个人登录是**主进程服务/外部浏览器 OAuth 流**（非应用内 QR），依赖窗口激活或主机浏览器回调，在**非活动隐藏桌面**无法完成 ⇒ 「镜像二维码我来扫」前提不成立（没有可扫的 QR）。未登录 ⇒ AI chat 不回复，`send_task→read_result` 完整链在隐藏桌面**尚未通**。界面可达 ≠ 登录可用 ≠ AI 可用，三层分开如实声明。
+- **候选路线（待授权/待验证，未单方执行）**：① 若能从主进程 IPC 抽出 OAuth URL，用户在主机浏览器手动完成登录、`trae://` 回调隐藏实例（需验证回调能否跨桌面送达）；② 复用主机已登录会话到隐藏 profile（**触碰凭据，须显式授权 + 风险评估**，可能使主机会话失效）；③ 完整链暂用主机 Trae(9222) 已验证适配器（capability C），但那是前台干扰路线、非隐藏零干扰。
