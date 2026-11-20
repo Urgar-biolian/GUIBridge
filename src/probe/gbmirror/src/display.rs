@@ -74,6 +74,33 @@ pub struct AppState {
     pub dragging: bool,
     pub last_mouse: (i32, i32),
     pub interval_ms: u32,
+    pub status_path: String,
+    pub status_tick: u32,
+}
+
+/// Export mirror/rec state for the read-only localhost dashboard (gbdash). Stale ts
+/// (>5s) means the mirror is not running; the dashboard never writes back.
+fn write_status(st: &AppState) {
+    let s = st.shared.lock().unwrap();
+    let cur = st.sessions.get(st.current);
+    let fps = if s.avg_ms > 0.0 { 1000.0 / s.avg_ms } else { 0.0 };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let v = serde_json::json!({
+        "pid": std::process::id(),
+        "ts": ts,
+        "current": cur.map(|c| c.name.clone()).unwrap_or_default(),
+        "desktop": cur.map(|c| c.desktop.clone()).unwrap_or_default(),
+        "fps": fps,
+        "seq": s.seq,
+        "zoom": s.zoom,
+        "rec_on": s.rec_on,
+        "rec_info": s.rec_info,
+        "rec_path": s.rec_path,
+    });
+    let _ = std::fs::write(&st.status_path, v.to_string());
 }
 
 fn utf16(s: &str) -> Vec<u16> {
@@ -297,6 +324,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     st.last_seq = seq;
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                 }
+                st.status_tick += 1;
+                if st.status_tick >= 1000 / st.interval_ms.max(1) {
+                    st.status_tick = 0;
+                    write_status(st);
+                }
             }
             0
         }
@@ -458,7 +490,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     };
                     // picker column: ellipsized to column width so long lines never
                     // spill into the mirror area
-                    let mut text_rect = |y: i32, h: i32| RECT {
+                    let text_rect = |y: i32, h: i32| RECT {
                         left: 8,
                         top: y,
                         right: PICKER_W - 8,
@@ -537,13 +569,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-pub fn run(sessions: Vec<Session>, mirror_w: i32, fps: u32) -> i32 {
+pub fn run(sessions: Vec<Session>, mirror_w: i32, fps: u32, status_path: String) -> i32 {
     if sessions.is_empty() {
         eprintln!("ABORT: registry has no sessions; run hidden_sessions.py export first");
         return 2;
     }
     let interval_ms = (1000 / fps.max(1)).max(1);
-    let state = Box::new(AppState {
+    let app = Box::new(AppState {
         sessions,
         current: 0,
         shared: Arc::new(Mutex::new(Shared {
@@ -567,8 +599,10 @@ pub fn run(sessions: Vec<Session>, mirror_w: i32, fps: u32) -> i32 {
         dragging: false,
         last_mouse: (0, 0),
         interval_ms,
+        status_path,
+        status_tick: 0,
     });
-    let ptr = Box::into_raw(state);
+    let ptr = Box::into_raw(app);
 
     unsafe {
         let hinst: HINSTANCE = GetModuleHandleW(std::ptr::null());
@@ -612,6 +646,9 @@ pub fn run(sessions: Vec<Session>, mirror_w: i32, fps: u32) -> i32 {
         // ShowWindow(SW_SHOWMAXIMIZED) right after creation did not stick (measured showCmd=1);
         // posting SC_MAXIMIZE lets the message loop perform the maximize reliably.
         PostMessageW(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE as WPARAM, 0);
+        if let Some(st) = state(hwnd) {
+            write_status(st);
+        }
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             TranslateMessage(&msg);

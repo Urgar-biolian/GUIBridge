@@ -812,3 +812,13 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 - **zoom/pan**：zoom=1 fit 居中；滚轮 ×1.25/×0.8（clamp 1..8）光标锚定；左键拖 pan（SetCapture/ReleaseCapture）；双击复位。view 参数存 Shared，worker 发布 `ViewFrame{bgra,w,h,dx,dy}`。2.44x 目视文字清晰。
 - **最大化**：`ShowWindow(SW_SHOWMAXIMIZED)` 紧跟创建不生效（showCmd=1）；改 `PostMessageW(WM_SYSCOMMAND, SC_MAXIMIZE)` 由消息循环执行，实测 (-9,-9,2569,1449)。注意：对外部已最大化窗口再 `MoveWindow` 会留 showCmd=3 但 rect=新尺寸，此后 SC_MAXIMIZE 为 no-op（需先 SC_RESTORE）——属 Win32 语义非缺陷。
 - 零干扰保持：镜像只 paint，压测期主机 fg 不变、光标位移 0。
+
+## 29 只读 localhost 观测 dashboard（gbdash，2026-11-20）
+
+`src/probe/gbdash.py`：stdlib `ThreadingHTTPServer` **仅绑 127.0.0.1:8710** + 内嵌单页暗色 UI（无 node/CDN 依赖，离线可跑）。把散落的 probe 产物聚成一屏管理/观测面，**只读**：不写引擎、不写冻结能力表、不起停会话。
+
+- **面板**：① 保活会话卡片（`hidden_sessions.list_sessions()` live pid 复查 + uptime）；② 镜像/录制（gbmirror 新增 `gbmirror_status.json` 导出：display WM_TIMER ~1s + 启动即写，含 current/desktop/fps/zoom/seq/rec_on/rec_info；ts 陈旧 >5s 判 stopped；rec mp4 size/mtime）；③ 能力表 frozen yaml 全条目（app/operation/impact/idempotent/channels risk/evidence 数）+ `docs/proposals/*.md` 待评审提案标题；④ FocusGuard/捕获事件流（枚举 `var/experiments/<run_id>/*.json`，容忍 walker 抽 four-state / zero_interference / verdict / reliability 汇总，按 run 倒序、可按状态过滤）；⑤ 按需单帧快照（`gbmirror --desktop … --frames 1`，BMP 读入响应后**立即 unlink** 不留可读帧；**wechat 须 confirm=1 否则 403**，UI 显式勾选「我确认查看微信私聊画面」）。
+- **gbmirror 配套改动**：`display.rs` 增 `write_status` + `AppState.status_path/status_tick` + `run(...,status_path)`；`main.rs` 由 registry 父目录推导 status 路径。仍属 probe 单人 approve。
+- **边界**：不碰 `apps/desktop-agent`（FastAPI/api.md 引擎控制面=冻结契约，改它须双人 approve）；能力表仅读。快照为只读零干扰重测（每次调用返回 `zero_interference_observed`）。
+- **实测**：9 单测（含 `"state"` 为 dict 时集合成员测试 TypeError 的回归）；全基线 **358 passed/1 skipped**。浏览器结构+交互验证：2 会话卡、镜像 running fps≈36、8 能力行、313 事件（过滤 with-interf 149 / no-interf 38 / capture 47）、wechat 无 confirm 403 + 勾选框显现、trae 快照渲染 3151×1802 且 zero_interference=true、console 无错误。in-app 浏览器 viewport 隐藏⇒用 DOM/evaluate 验证而非像素截图（如实注明）。
+- 运行：`python -X utf8 src/probe/gbdash.py [--port 8710]`。

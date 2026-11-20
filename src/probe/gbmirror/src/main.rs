@@ -197,5 +197,14 @@ fn main() {
         std::process::exit(capture_mode(&args));
     }
     let sessions = registry::load(&args.registry);
-    std::process::exit(display::run(sessions, args.width, args.fps));
+    let status_path = std::path::Path::new(&args.registry)
+        .parent()
+        .map(|p| p.join("gbmirror_status.json"))
+        .unwrap_or_else(|| std::path::PathBuf::from("gbmirror_status.json"));
+    std::process::exit(display::run(
+        sessions,
+        args.width,
+        args.fps,
+        status_path.to_string_lossy().into_owned(),
+    ));
 }
