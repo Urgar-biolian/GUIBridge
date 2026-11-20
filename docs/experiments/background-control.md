@@ -772,3 +772,31 @@ E2 的误报率仅基于 3 个负例、检出率仅基于 3 个正例，样本�
 - **意义**：「agent 给隐藏 Trae 发开发任务 → 读回复/执行结果」完整链**实测成立**，主机零干扰 ⇒ 接近「用户工作时独立运行的 AI 编程工作台」。读/写均经 CDP loopback（APP_PROTOCOL，none 风险），隐藏实例与主机 Trae 同时在线互不影响。
 - **边界**：本次为 **chat 模式**无害发送（reply OK，已授权 chat live）；**agent 模式 live 仍仅隔离 demo + 手动审批**（当前已设手动审批），未在本探针行使 agent 改码。回复文本 untrusted，须独立验证（原则）。隐藏 profile 含主机账号会话（gitignored，用毕可 purge）。
 - **契约影响**：隐藏 Trae 通道纳入正式能力表/引擎属契约变更，须提案 + 双人 approve；本探针不改契约。
+
+## 28 保活会话注册表 + Rust 镜像/硬件录制（gbmirror，2026-11-20）
+
+### 28.1 注册表 facade（`src/probe/hidden_sessions.py`）
+
+多个隐藏桌面保活会话（微信 `GBWeChatKeepAlive`、Trae `GBTraeKeepAlive`）**并存**，各自管理器保活。新增薄注册表：扫描各 app state json，归一 `{name,kind,desktop,pid,alive,hwnd,port?,profile?,created_at}`，`list/status/attach/stop/export` **委托现有 `hidden_session.py`/`hidden_trae_session.py`**（不重写其登录/CDP 逻辑，保住已验证链）。本质是「并存会话注册表」非串行 FIFO 队列。`export` 写 `var/experiments/hidden_sessions.json`（gitignored）供 Rust 选择面板读。实测 list/attach 两会话 alive、worker desktop_ok=true、附着不杀桩。
+
+### 28.2 Rust 截图核心 + 零干扰重测（`src/probe/gbmirror/`，windows-sys 0.59 裸 FFI）
+
+`capture.rs`：附着 `OpenDesktopW`，`SetThreadDesktop` 工作线程逐窗 `PrintWindow(PW_RENDERFULLCONTENT)` 拼接进**内存 top-down BGRA**（零 PNG 往返），大窗先画近似 z-order，黑底（隐藏桌面无壁纸）。`main.rs --desktop` 截图模式在主线程采样主机前台/光标 before/during/after **重测零干扰**（不沿用 Python verified）。
+
+- 实测 Trae（3 窗）：avg **44.2ms**/帧、nonblack 0.244、91 色；WeChat（3 窗）：avg **43.3ms**、nonblack 0.106、52 色；两者 `zero_interference_observed=true`（fg 不变、光标位移 0、期间最大位移 0）。BMP  proof 目视确认隐藏 Trae 真实 IDE 按真实屏幕坐标拼接。
+- **天花板（与语言无关）**：隐藏桌面无 DWM 合成面 ⇒ 只能逐窗 PrintWindow；该调用（Chromium 强制 GPU 回读）≈44ms/帧 ⇒ 截图上限 ~22fps。Rust 砍掉的是「截图→显示」之间开销（PNG 编解码×2、Python 逐像素切片、tkinter 120ms 轮询），**不会**把 44ms/帧变 60fps。
+
+### 28.3 显示 + 会话选择面板（`display.rs`）
+
+主机可见 Win32 窗口：左 owner-drawn 选择面板（name/kind/[alive]、当前高亮）+ 右 GDI `StretchDIBits` 双缓冲 blit 内存 BGRA（内容 bbox 裁剪缩放）。16ms WM_TIMER 驱动重绘；capture worker 填共享帧缓冲。点选切换=停旧 worker+CloseDesktop+OpenDesktopW 新桌面+起新 worker。实测渲染正确、点选 wechat→trae 切换成功、状态栏 capture **19–23fps**/frames/desktop/host_fg。镜像只 paint，主机零干扰（采样期 fg 不变；光标位移若出现为用户物理移动，非镜像所致）。
+
+### 28.4 硬件优先 H.264 录制（`record.rs`，windows 0.61 Media Foundation）
+
+MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 MFT（无硬件时回退软件编码，**实际 HW/SW 未单独验证**），输入 RGB32、输出 avc1，COM MTA 于 capture worker。选择面板 REC 行点击开/停；停时 `Finalize`。实测录隐藏 Trae ~6s：mp4 **446KB**、top-level atoms `ftyp/uuid/mdat/moov`（moov 在=Finalize 成功）、`stsd=avc1`、**99 帧**、`tkhd 1609×1370`、`mvhd 4.3s` ⇒ 可播放真 H.264 视频；录制期间主机 fg 不变/光标 0。无 ffmpeg 依赖（MF 为 Windows 自带）。
+
+### 28.5 边界与隐私
+
+- 零干扰为**轮询采样 observed**（<2ms 盲区同 FocusGuard 限制），非事件钩子级证明；Rust worker 已独立重测，未拿 Python verified 直接套。
+- 镜像/录制**会显示真实内容**：默认 picker 首项=wechat（含私聊）；公开录屏须切 benign 靶（隐藏 Trae 隔离 demo / 自绘压测 app）。验证用含私聊 PNG 已删；录制 mp4 为 benign 隐藏 Trae。
+- 属 `src/probe` 演示工具，**不碰冻结契约/引擎**，单人 approve；若日后把 Rust 截图/录制接引擎/MCP 截图接口=契约变更须双人 approve。
+- 构建：`cargo build --offline --release`（windows-sys 0.59 + windows 0.61 + serde_json 均本地缓存，离线可编）；`target/` gitignored。运行：`gbmirror [--registry PATH --width N --fps N]` 或 `--desktop NAME --pid PID --out BMP [--frames N]`。
