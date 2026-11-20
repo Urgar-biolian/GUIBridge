@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,7 +31,7 @@ for _p in (str(ROOT), str(PROBE_DIR)):
 
 import hidden_trae_session as hs  # noqa: E402
 
-HOST_PROFILE = Path(r"C:\Users\56407\AppData\Roaming\Trae")
+HOST_PROFILE = Path(os.environ["APPDATA"]) / "Trae"
 HIDDEN_PROFILE = hs.PROFILE_DIR
 RUNS = ROOT / "var" / "experiments"
 

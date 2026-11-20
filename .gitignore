@@ -11,5 +11,7 @@ dist/
 src/probe/*.png
 src/probe/uia_dump.json
 var/
-tests/bench/results/
+tests/bench/results/*
+!tests/bench/results/*.json
+*.log
 .DS_Store
