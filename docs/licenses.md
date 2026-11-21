@@ -2,6 +2,8 @@
 
 状态：2026-11-21 离线审计 · 项目许可选定 **MIT**（见根目录 `LICENSE`）
 
+> A 线的全量审计（57 个 Python 包、24 个 Rust crate、50 个 npm 包）见 [license-audit.md](research/license-audit.md)；本文件是 B 线本机 `.venv` 的第二视角核对，两者结论一致（全部宽松许可，无强 copyleft）。
+
 ## 1. 范围与方法
 
 - 审计对象：`pyproject.toml` 声明的直接依赖、本机 `.venv` 实际安装的完整 Python 依赖集、`apps/dashboard` 的 npm 依赖树。
@@ -11,7 +13,7 @@
 ## 2. 结论
 
 - 已安装的 Python 与 npm 依赖**全部为宽松许可**：MIT、MIT-0、BSD-2-Clause、BSD-3-Clause、Apache-2.0、ISC、PSF-2.0，以及 `Apache-2.0 OR BSD-3-Clause` / `Apache-2.0 OR BSD-2-Clause` 二选一。
-- 未发现 GPL / AGPL / LGPL / SSPL / MPL 等需要源代码开放或文件级回馈的许可（`ocr` 额外依赖未安装，未在审计范围内，见第 5 节）。
+- 本机集合未出现 GPL / AGPL / LGPL / SSPL / MPL；A 线全量审计另记 `certifi`、`tqdm` 为 MPL-2.0（文件级弱 copyleft，未修改，随包保留声明即可，见 [license-audit.md](research/license-audit.md)）。`ocr` 额外依赖未在本机安装，未逐包复核（见第 5 节）。
 - 因此以 **MIT** 发布本项目与全部已安装依赖兼容；分发时保留本仓库 `LICENSE` 及各依赖自身版权声明即可。
 
 ## 3. Python 直接依赖
@@ -25,11 +27,12 @@
 | fastapi | 0.163.1 | MIT | 控制平面 REST |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI 服务器 |
 | mcp | 2.3.0（声明 `>=1.0,<2`） | MIT | 版本偏差见第 5 节 |
+| Pillow | 13.0.0 | MIT-CMU | gbdash / Python 镜像的截图与显示 |
 | pytest（dev） | 9.2.0 | MIT | 测试 |
 | httpx（dev，声明） | 未安装 | — | 代码与测试均未引用，见第 5 节 |
 | rapidocr-onnxruntime（ocr，可选） | 未安装 | — | 未审计，见第 5 节 |
 
-## 4. 完整 Python 依赖表（本机 `.venv`，42 个第三方发行版 + pip）
+## 4. 完整 Python 依赖表（本机 `.venv`，43 个第三方发行版 + pip）
 
 | 包 | 版本 | 许可 |
 |---|---|---|
@@ -55,6 +58,7 @@
 | mss | 10.2.0 | MIT |
 | opentelemetry-api | 1.45.2 | Apache-2.0 |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause |
+| Pillow | 13.0.0 | MIT-CMU |
 | pip | 26.3 | MIT |
 | pluggy | 1.7.0 | MIT |
 | pycparser | 3.12 | BSD-3-Clause |
@@ -81,7 +85,7 @@
 
 ## 5. 缺口与注意事项
 
-1. **OCR 可选依赖未审计。** `ocr` extra（`rapidocr-onnxruntime>=1.3`）在本机未安装，其传递闭包（onnxruntime、opencv-python、numpy 等）不在上表内。交付物若启用 OCR 通道，须在安装后补一次同样方法的审计并按结果更新本文件；当前所有交付证据与测试都不依赖 OCR。
+1. **OCR 可选依赖未在本机复跑。** `ocr` extra（`rapidocr-onnxruntime>=1.3`）在本机未安装；A 线审计已覆盖其闭包并标出 `tqdm`（MPL-2.0 AND MIT，文件级义务、未修改）。交付物若启用 OCR 通道，仍建议在安装后按 `tools/license_audit.py` 复跑一次。
 2. **mcp 版本偏差。** `pyproject.toml` 声明 `mcp>=1.0,<2`（网关按 1.x FastMCP API 编写），本机 `.venv` 实际为 `mcp==2.3.0`，因此 `tests/test_mcp.py`、`tests/test_live_mcp.py`、`tests/test_handoff_mcp_demo.py` 三条用例按设计 skip（528 passed / 3 skipped / 8 deselected）。发布复核应在声明范围内重建环境（`pip install -e '.[dev]'`）重跑全套。
 3. **`httpx` 声明但未使用。** `dev` extra 含 `httpx>=0.27`，本机未安装该发行版，且仓库代码与测试均未 import（控制平面测试走自建 ASGI 驱动，不用 `fastapi.testclient`）。环境里的 `httpx2` / `httpcore2` 是独立发行版，未被项目引用。保留声明不影响许可结论，后续可精简。
 4. **`src/probe/PROBE_REPORT.md` 里的探针截图**不入库；本次收尾同时把 `src/probe/cli_chat.log` 移出版本库并新增 `*.log` 忽略。

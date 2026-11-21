@@ -377,7 +377,7 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 | 依赖许可证审计 | 新增 `docs/licenses.md`：本机 `.venv` 42 个第三方发行版（另含 pip）+ dashboard 50 个 npm 包，全部 MIT / MIT-0 / BSD-2 / BSD-3 / Apache-2.0 / ISC / PSF，与 MIT 相容；`originality-log.md` §5 待办结清并指向该文件 |
 | 泄漏检查 | `src/probe/cli_chat.log` 移出版本库（文件留在盘上，被新加的 `*.log` 忽略）；`tests/bench/results/` 改为 `results/*` + 保留 `*.json` 证据；新增文件无本机绝对路径与用户名 |
 | 门表统一 | `docs/team-plan.md` 改为 G1（11/20）→ G2–G4 live 整合（11/23–27）→ G5（11/30），与 README、`handoff-a-to-b.md` 一致；G1 行注明「合并与 F10 已落，live 项不算结清」 |
-| 验证 | `pytest -q -m "not live"` → 528 passed / 3 skipped / 8 deselected；`npm run build` 通过；demo-app `node --test` 8/8；五个冻结契约文件零改动 |
+| 验证 | `pytest -q -m "not live"` → 528 passed / 3 skipped / 8 deselected（合并 A 线前；合并后见下一节 566）；`npm run build` 通过；demo-app `node --test` 8/8；五个冻结契约文件零改动 |
 
 仍阻塞、没有代替品的事：
 
@@ -387,3 +387,18 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 4. **routed 替换默认仍需双人 approve**：本次只做「不动默认」的部分（见任务 #7 未完成项）。
 5. **环境偏差记录在案**：`.venv` 的 `mcp==2.3.0` 不在声明范围 `>=1.0,<2` 内，3 条网关用例按设计 skip；
    `httpx` 声明了但未安装、也未在代码/测试中使用。交付复核应在声明范围内重建环境重跑。
+
+---
+
+## 合并 A 线隐藏桌面与镜像（2026-11-21，`0511a89`）
+
+`integrate/g1` 合入 `origin/feat/a-perception@40e0f95`（E7–E15 隐藏桌面/微信/镜像、`gbmirror` Rust、`gbdash`、
+微信适配器、`docs/delivery-checklist.md`、`docs/research/license-audit.md`）。冲突按既有方针解决：
+
+- `pyproject.toml`：保留 `mcp<2`（网关是 1.x FastMCP API），并入 A 新增的 `pillow>=10.0`；`license` 两处文本取带空格的写法。
+- `.gitignore`：并集——`*.log` + `tests/bench/results/*` 且保留 `*.json`。
+- `LICENSE`：取本仓库版本（与 A 版逐字节相同，仅差文末换行）。
+
+`Pillow 13.0.0` 装进 `.venv` 以运行 A 新增的 `tests/test_gbdash.py` 等用例；`pytest -m "not live"` →
+**566 passed, 3 skipped, 8 deselected**；冻结契约文件零改动。A 的审计见 `docs/research/license-audit.md`
+（57 Python / 24 Rust crate / 50 npm，含 `certifi`、`tqdm` 的 MPL-2.0 文件级义务说明），与本机 `docs/licenses.md` 结论一致。

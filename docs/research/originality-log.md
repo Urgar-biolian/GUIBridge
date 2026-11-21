@@ -73,6 +73,7 @@
 | FastAPI | 0.163.1 | MIT | 桌面代理 API |
 | Uvicorn | 0.54.0 | BSD-3-Clause | ASGI 服务 |
 | mcp | 2.3.0（声明 `>=1.0,<2`） | MIT | MCP 服务端 |
+| Pillow | 13.0.0 | MIT-CMU | gbdash / Python 镜像截图与显示 |
 | rapidocr-onnxruntime | 未安装 | — | OCR（可选，未审计） |
 | pytest | 9.2.0 | MIT | 测试 |
 
@@ -88,7 +89,7 @@
 
 ### 待办
 
-- [x] 审计传递依赖（Python 42 个发行版全部为宽松许可；OCR 可选闭包未安装、未审计）。
+- [x] 审计传递依赖（Python 43 个第三方发行版全部为宽松许可，含 Pillow MIT-CMU；OCR 闭包由 A 线审计覆盖，本机未安装未复跑）。
 - [x] 审计前端传递依赖许可证（50 个包，全 MIT/ISC/BSD/Apache-2.0）。
 - [x] 生成完整依赖清单（`docs/licenses.md`，按本机 `.venv` 与 `node_modules` 取数；无锁定文件）。
 - [ ] OCR 通道如启用，安装 `ocr` extra 后补审 onnxruntime/opencv 闭包与模型许可。

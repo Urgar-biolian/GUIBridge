@@ -32,8 +32,12 @@
   阻塞项是 R5（真实 Trae 会话发送需用户授权）与 G2（跨显示器 DPI），见 [docs/benchmark.md](docs/benchmark.md)
 - ✅ 收尾（2026-11-21）：项目许可定为 MIT、依赖许可证审计落 [docs/licenses.md](docs/licenses.md)、
   移出版本库的调试日志与 `*.log` 忽略规则、集成门日期与 handoff 对齐；冻结契约零改动
+- ✅ 隐藏桌面与镜像（A 线，probe 侧）：隐藏桌面隔离运行靶应用、主机零干扰实测（E8/E15），
+  Rust `gbmirror` 原生镜像/录制与 `gbdash` 只读观测面板，微信适配器与只读/零干扰发信实验；
+  全部证据在 [background-control.md](docs/experiments/background-control.md) 第 15–29 节，
+  逐条复跑命令见 [docs/delivery-checklist.md](docs/delivery-checklist.md)
 - ⬜ S5 参赛交付：站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）
-- 测试现状：`pytest -m "not live"` → 528 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
+- 测试现状：`pytest -m "not live"` → 566 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
 - 每阶段「做到了什么、没做到什么」一律记在 [docs/dev-status.md](docs/dev-status.md)，不拿界面显示完成当交付
 
 ## 双人分工（本仓库执行约定）
@@ -66,7 +70,10 @@
 | [docs/research/competitor-analysis.md](docs/research/competitor-analysis.md) | agent-desktop 公开能力对比（仅公开资料） |
 | [docs/research/originality-log.md](docs/research/originality-log.md) | 原创性与第三方依赖许可证记录 |
 | [docs/licenses.md](docs/licenses.md) | 依赖许可证审计：逐包清单、MIT 兼容结论、未覆盖项 |
-| [docs/experiments/background-control.md](docs/experiments/background-control.md) | Phase 1 E1–E6 后台控制实验：环境、结果、四态、验收与限制 |
+| [docs/research/license-audit.md](docs/research/license-audit.md) | A 线全量审计（Python/Rust/npm，含 MPL 文件级义务说明） |
+| [docs/delivery-checklist.md](docs/delivery-checklist.md) | 交付收尾清单：门状态、live 运行清单与授权门、录屏分镜、提交检查 |
+| [docs/proposals/wechat-foreground-input.md](docs/proposals/wechat-foreground-input.md) | 微信前台输入方案提案（待评审，未生效） |
+| [docs/experiments/background-control.md](docs/experiments/background-control.md) | E1–E15 后台控制实验：UI 消息注入、隐藏桌面隔离、微信只读/零干扰、镜像与观测工具 |
 | [docs/api.md](docs/api.md) | MCP 8 工具 + 本地 REST/SSE 规范与错误码 |
 | [docs/sql.md](docs/sql.md) | SQLite 事件存储设计（DDL：packages/events/schema.sql） |
 | [docs/agent.md](docs/agent.md) | 跨 Agent 交接协议、状态语义、提示注入防护 |
@@ -80,7 +87,7 @@
 
 ```bash
 python -m pip install -e ".[dev]"
-pytest -m "not live"                 # 528 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
+pytest -m "not live"                 # 566 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
 
 # 控制平面（loopback only；--mode simulated 用 fixture 通道，不需要打开 Trae）
 python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --port 8765
@@ -113,12 +120,13 @@ packages/execution/       安全门 / 受限动作执行 / 独立验证器 / Foc
 packages/routing/         能力表路由 / 干扰策略 / 重试决策（Phase 0 草案）
 packages/focusguard/      干扰监测、四态结果与扩展信封
 packages/adapters/trae/   适配器：adapter.py（走执行器）+ cdp_direct.py（直连 CDP）+ locators.yaml
+packages/adapters/wechat/ 微信适配器与 Win32/UIA 驱动（probe 侧接入，未进控制面默认路径）
 packages/events/          SQLite 事件存储（schema.sql：windows / tasks / events / snapshots / approvals）
 packages/mcp/             冻结的 8 工具 MCP Server（手写 stdio 帧，不依赖 mcp SDK）
 packages/mcp_gateway/     A 线的 FastMCP 网关（`mcp<2`），与上面并存
 packages/router_engine.py GUIBridgeEngine：A 线的通道路由入口（控制平面入口是 engine.ControlPlane）
 examples/                 demo-app、两条交接演示、live agent 演示
-src/probe/                S0/S1 探针脚本与实测记录（不入公开交付）
+src/probe/                探针与实验（S0/S1、隐藏桌面 E8–E15）、gbmirror（Rust）、gbdash（不入公开交付）
 tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 + bench
 ```
 
@@ -147,5 +155,8 @@ tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 +
 - **Dashboard 只能看和批，不能提交任务**：dev-prompts S4 的约束（不新增控制通道），不是漏做。
 - **保留期只是配置项**：`EventStore(retention_days=30)` 与 `prune()` 都在，还没有调用方接线。
 - CDP 通道要求托管启动目标应用（仅 loopback 随机端口），实现见 `apps/desktop-agent/launch.py`。
+- **隐藏桌面镜像需要编译工具链**：原生镜像/录制用 `src/probe/gbmirror`（Rust，`cargo build --offline --release`），
+  本机没有 Rust 时只有 Python 镜像 `src/probe/hidden_mirror.py`（需 Pillow，且当前绑定保活会话）；
+  镜像/录制会显示真实画面，公开录屏须切 benign 靶。零干扰是采样观察值，<2 ms 盲区与 FocusGuard 相同。
 - `apps/desktop-agent/registry.py` 是 pre-G1 的 locator 载入 shim，应由 `packages/semantic/locator_cache.py`
   取代，已列入合并待办（docs/handoff-a-to-b.md）。
