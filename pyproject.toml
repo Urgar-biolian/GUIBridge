@@ -15,7 +15,7 @@ dependencies = [
     "websockets>=12.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
-    "mcp>=1.0,<2",  # mcp_gateway is written against the 1.x FastMCP API; 2.x renamed it
+    "mcp>=2.0",  # official surface (packages/mcp) uses the 2.x MCPServer; experimental mcp_gateway needs 1.x in a separate env
     "pillow>=10.0",
 ]
 

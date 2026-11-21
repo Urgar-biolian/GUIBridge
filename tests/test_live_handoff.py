@@ -129,6 +129,8 @@ def strip_reference_implementation(workspace: Path) -> str:
     删掉用例会让 `node --test` 空转通过，验收锚点必须留在仓库里。
     """
     text = (workspace / "index.html").read_text(encoding="utf-8")
+    if "<button" not in text:
+        return handoff_demo.git(workspace, "rev-parse", "HEAD")
     start, end = text.index("<button"), text.index("</button>") + len("</button>")
     (workspace / "index.html").write_text(text[:start] + text[end:], encoding="utf-8")
     handoff_demo.git(workspace, "add", "-A")

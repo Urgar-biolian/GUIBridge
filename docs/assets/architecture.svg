@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" role="img" aria-label="GUIBridge 架构图：目标应用经感知层、语义层、执行层到工具面，独立验证器与全动作审计贯穿"><style>svg{--site-bg:#0a0d14;--site-fg:#e6e9ef;--site-muted:#9aa4b2;--site-surface:#121722;--line:rgba(148,163,184,0.16);--line-strong:rgba(148,163,184,0.34);--h-green:#00d992;--h-blue:#4d9fff;--h-violet:#a78bfa;--h-amber:#f0b429;--h-magenta:#f472b6;font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;}</style><rect width="1000" height="430" fill="#0a0d14"/>
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="var(--site-muted)"/>
+          </marker>
+        </defs>
+        <g font-family="var(--site-font)" font-size="14">
+          <text x="895" y="95" fill="var(--site-muted)" font-size="13" text-anchor="middle">AI Agent</text>
+
+          <rect x="20" y="150" width="150" height="90" rx="10" fill="var(--site-bg)" stroke="var(--line-strong)"/>
+          <text x="95" y="185" fill="var(--site-fg)" text-anchor="middle" font-weight="600">目标应用</text>
+          <text x="95" y="210" fill="var(--site-muted)" text-anchor="middle" font-size="12">Trae IDE / 无 API 软件</text>
+
+          <rect x="210" y="60" width="170" height="250" rx="10" fill="var(--h-blue)" fill-opacity="0.05" stroke="var(--h-blue)" stroke-opacity="0.45"/>
+          <text x="295" y="85" fill="var(--h-blue)" text-anchor="middle" font-size="12">感知层</text>
+          <rect x="228" y="100" width="134" height="44" rx="8" fill="var(--site-surface)" stroke="var(--line)"/>
+          <text x="295" y="127" fill="var(--site-fg)" text-anchor="middle">CDP</text>
+          <rect x="228" y="156" width="134" height="44" rx="8" fill="var(--site-surface)" stroke="var(--line)"/>
+          <text x="295" y="183" fill="var(--site-fg)" text-anchor="middle">UIA</text>
+          <rect x="228" y="212" width="134" height="44" rx="8" fill="var(--site-surface)" stroke="var(--line)"/>
+          <text x="295" y="239" fill="var(--site-fg)" text-anchor="middle">OCR / 视觉</text>
+          <text x="295" y="288" fill="var(--site-muted)" text-anchor="middle" font-size="12">空间融合 · 冲突标记</text>
+
+          <rect x="420" y="120" width="160" height="130" rx="10" fill="var(--h-green)" fill-opacity="0.06" stroke="var(--h-green)" stroke-opacity="0.55"/>
+          <text x="500" y="155" fill="var(--site-fg)" text-anchor="middle" font-weight="600">语义层</text>
+          <text x="500" y="182" fill="var(--site-muted)" text-anchor="middle" font-size="12">semantic_id 定位</text>
+          <text x="500" y="205" fill="var(--site-muted)" text-anchor="middle" font-size="12">自修复重定位</text>
+          <text x="500" y="228" fill="var(--site-muted)" text-anchor="middle" font-size="12">locators 注册表</text>
+
+          <rect x="620" y="120" width="160" height="130" rx="10" fill="var(--h-amber)" fill-opacity="0.05" stroke="var(--h-amber)" stroke-opacity="0.45"/>
+          <text x="700" y="155" fill="var(--site-fg)" text-anchor="middle" font-weight="600">执行层</text>
+          <text x="700" y="182" fill="var(--site-muted)" text-anchor="middle" font-size="12">安全门：白名单 / 审批</text>
+          <text x="700" y="205" fill="var(--site-muted)" text-anchor="middle" font-size="12">受限动作执行</text>
+          <text x="700" y="228" fill="var(--site-muted)" text-anchor="middle" font-size="12">FocusGuard 干扰监测</text>
+
+          <rect x="820" y="120" width="160" height="130" rx="10" fill="var(--h-violet)" fill-opacity="0.05" stroke="var(--h-violet)" stroke-opacity="0.45"/>
+          <text x="900" y="155" fill="var(--site-fg)" text-anchor="middle" font-weight="600">工具面</text>
+          <text x="900" y="182" fill="var(--site-muted)" text-anchor="middle" font-size="12">固定 8 个 MCP 工具</text>
+          <text x="900" y="205" fill="var(--site-muted)" text-anchor="middle" font-size="12">REST + SSE</text>
+          <text x="900" y="228" fill="var(--site-muted)" text-anchor="middle" font-size="12">Dashboard 只读 + 审批</text>
+
+          <line class="flowline" x1="170" y1="195" x2="208" y2="195" stroke="var(--site-muted)" marker-end="url(#ar)"/>
+          <line class="flowline" x1="380" y1="185" x2="418" y2="185" stroke="var(--site-muted)" marker-end="url(#ar)"/>
+          <line class="flowline" x1="580" y1="185" x2="618" y2="185" stroke="var(--site-muted)" marker-end="url(#ar)"/>
+          <line class="flowline" x1="780" y1="185" x2="818" y2="185" stroke="var(--site-muted)" marker-end="url(#ar)"/>
+          <line class="flowline" x1="900" y1="120" x2="900" y2="100" stroke="var(--site-muted)" marker-end="url(#ar)"/>
+
+          <rect x="210" y="345" width="370" height="60" rx="10" fill="var(--h-green)" fill-opacity="0.06" stroke="var(--h-green)" stroke-opacity="0.55"/>
+          <text x="395" y="370" fill="var(--site-fg)" text-anchor="middle" font-weight="600">独立验证器</text>
+          <text x="395" y="392" fill="var(--site-muted)" text-anchor="middle" font-size="12">只信 Git 变更范围 + 验收命令退出码</text>
+
+          <rect x="620" y="345" width="360" height="60" rx="10" fill="var(--h-magenta)" fill-opacity="0.05" stroke="var(--h-magenta)" stroke-opacity="0.45"/>
+          <text x="800" y="370" fill="var(--site-fg)" text-anchor="middle" font-weight="600">全动作审计</text>
+          <text x="800" y="392" fill="var(--site-muted)" text-anchor="middle" font-size="12">SQLite 事件存储 · 追加不更新</text>
+
+          <line x1="700" y1="250" x2="700" y2="300" stroke="var(--site-muted)" stroke-dasharray="4 4"/>
+          <line x1="700" y1="300" x2="395" y2="300" stroke="var(--site-muted)" stroke-dasharray="4 4"/>
+          <line x1="395" y1="300" x2="395" y2="343" stroke="var(--site-muted)" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+          <line x1="800" y1="250" x2="800" y2="343" stroke="var(--site-muted)" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+        </g>
+      </svg>

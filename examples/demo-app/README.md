@@ -4,9 +4,11 @@
 
 - `index.html`：一个登录页（Vue 3 CDN）。密码框的显示/隐藏切换按钮与 `tests/` 里的验收用例是 S3
   任务的**参考实现**，仓库里保留两者，是为了让离线的验收链路真的能跑出 `verified`。
-- live 演示时**只删实现**（index.html 里的按钮），保留 `tests/password-toggle.test.mjs` 并提交：
-  连用例一起删会让 `node --test` 空转通过，验收锚点就失效了。
-  `tests/test_live_handoff.py` 先跑一次这条命令，确认剥离后的基线确实失败才继续。
+- `prepare_workspace` 新建副本时自动播种「改动前」基线：删掉参考按钮、保留验收用例并提交。
+  模拟演示由 `handoff_demo.py` 的写入代层恢复参考实现（声明为模拟证据，不代表 Trae 真的改码）。
+- live 演示复用同一基线（`strip_reference_implementation` 幂等）：**只删实现**，保留
+  `tests/password-toggle.test.mjs`：连用例一起删会让 `node --test` 空转通过，验收锚点就失效了。
+  `tests/test_live_handoff.py` 先确认剥离后的基线确实失败才继续。
 
 ## 验收命令
 
@@ -25,7 +27,7 @@ verifier 以 argv 列表执行，不经 shell，因此 Windows 路径里的反�
 | `tests/password-toggle.test.mjs` | 切换按钮的存在、`@click` 翻转同一状态、`aria-*` 与文案 | 失败 |
 | `tests/password.test.mjs` | `src/password.js` 的掩码与初始状态（纯函数单测，不读 HTML） | 通过 |
 
-「未改动时」指的是 live 演示删掉按钮之后的基线；仓库里带参考实现提交时三条全过。
+「未改动时」指的是播种/live 剥离后的基线；仓库源文件带参考实现，三条全过。
 用例读取静态 HTML 断言结构与绑定，因为离线环境没有浏览器；真实点击行为由 live 演示在浏览器里确认。
 verifier 不看用例"看起来对不对"，只看这条命令的退出码与 Git 变更范围，
 见 [docs/agent.md](../../docs/agent.md) 的信任边界。
@@ -41,7 +43,8 @@ verifier 不看用例"看起来对不对"，只看这条命令的退出码与 Gi
 
     python examples/handoff_demo.py --workspace C:/tmp/guibridge-demo
 
-`prepare_workspace` 会把本目录复制成独立的本地仓库（无 remote）；带 remote 的目录一律拒绝。
+`prepare_workspace` 会把本目录复制成独立的本地仓库（无 remote），新副本播种「改动前」基线；
+已存在的仓库原样复用（其 HEAD 即验证基线）；带 remote 的目录一律拒绝。
 `examples/demo-app` 自身的提交历史属于主仓库，不能作为验证基线。
 
 ## 已知限制

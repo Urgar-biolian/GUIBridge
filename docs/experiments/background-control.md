@@ -1,5 +1,8 @@
 # 后台控制可行性实验（background-control）
 
+> **非官方实验声明**：本文所有第三方应用（Trae / 微信等）实验均为非官方、受限兼容实验，
+> 不代表相关平台授权、背书或合作；不保证随对方版本持续可用。公开材料一律使用 benign 靶应用或脱敏摘要。
+
 状态：Phase 1 实验已执行（2026-11-17）。权威数据来自 run `20261117T082451Z`（E1/E1b/E2/E3/E4 基线）与增补 run `20261117T090104Z`（E1c 前台对照、E2 停留曲线、微信 PID 扫描、Trae live 无害消息）。增补结果见第 11 节。
 纪律：禁止伪造测试数据、模拟成功结果或把未完成功能标记为完成。所有数字均来自 `src/probe/run_experiments.py` 的可复跑输出，原始 JSON 位于 `var/experiments/<run_id>/results.json`（gitignore，不入库）。
 

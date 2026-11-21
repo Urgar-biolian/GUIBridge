@@ -1,5 +1,8 @@
 # 提案：微信 send_message 增加 foreground_input 通道（待 B 评审 + owner approve）
 
+> **非官方实验声明**：本提案涉及第三方应用（微信）的受限兼容实验，不代表腾讯或任何平台授权、背书或合作；
+> 不保证随对方版本持续可用。公开演示一律使用 benign 靶应用，不出现真实聊天内容与个人信息。
+
 **状态：PROPOSAL — 未应用。冻结能力表 `packages/routing/capabilities.draft.yaml`（status: frozen，R1 owner 2026-11-17 批准）未被本提案修改。**
 
 冻结表条目改动属契约数据变更，须双人 approve（B 线评审 + owner 批准）。本文件给出拟议改动、实测证据与理由，供裁决；批准前 `wechat × send_message` 仍只有 `uia: {supported: false, risk: unknown}`，路由层不会放行任何微信写通道。

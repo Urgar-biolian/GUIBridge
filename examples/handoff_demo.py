@@ -3,7 +3,7 @@
 Run it against the pre-G1 simulation to see the whole chain, including the `verified` step the
 executor can never grant itself:
 
-    python examples/handoff_demo.py --node C:/Users/you/tools/node/node.exe
+    python examples/handoff_demo.py --node node
 
 `client` is anything with `send_task` / `get_status` / `read_result` — the MCP tool surface has the
 same names, so a live run passes an MCP client instead of the in-process plane.
@@ -16,6 +16,7 @@ the acceptance commands the planner chose, not from anything Trae said.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,9 +77,29 @@ def git(repo: Path | str, *args: str) -> str:
 _SEED_IDENTITY = ("-c", "user.name=GUIBridge Demo", "-c", "user.email=demo@guibridge.local")
 
 
+_TOGGLE_BUTTON = re.compile(r'[ \t]*<button\b[^>]*data-testid="toggle-password"[^>]*>.*?</button>\n?', re.S)
+_TASK_COMMENT = re.compile(r'[ \t]*<!-- S3 演示任务：.*?-->\n?', re.S)
+
+
+def _seed_before_state(index: Path) -> None:
+    """Seed the copied demo app in its "before" state: reference implementation removed, tests kept.
+
+    The reference stays in examples/demo-app/index.html as the single source of truth; a simulated
+    run restores it through the writing stand-in, a live run lets Trae build it. Keeping the tests
+    is what stops `node --test` from vacuously passing.
+    """
+    html = index.read_text(encoding="utf-8")
+    html = _TOGGLE_BUTTON.sub("", html)
+    html = _TASK_COMMENT.sub(
+        "      <!-- S3 演示任务：为密码输入框新增显示/隐藏切换按钮；验收用例在 tests/，改动前必须失败。 -->\n",
+        html)
+    index.write_text(html, encoding="utf-8")
+
+
 def prepare_workspace(dest: str | Path | None = None, source: Path = DEMO_APP) -> Path:
     """Copy the demo app into an independent git repo, so no real project is ever a demo target.
 
+    A fresh copy is seeded in the "before" state (toggle removed, acceptance tests kept).
     An existing repo is reused as-is (its HEAD is the verification baseline) unless it has a remote,
     which means it is somebody's real project and the run refuses it.
     """
@@ -101,6 +122,7 @@ def prepare_workspace(dest: str | Path | None = None, source: Path = DEMO_APP) -
             shutil.copy2(item, target / item.name)
         else:
             shutil.copytree(item, target / item.name)
+    _seed_before_state(target / "index.html")
     git(target, "init", "-b", "main")
     git(target, "add", "-A")
     git(target, *_SEED_IDENTITY, "commit", "-m", "seed: demo app before the handoff task")
@@ -189,10 +211,40 @@ def approve_forcing_manual(client, window_id: str | None = None) -> str:
                                   "semantic_ids": ["trae.chat.approval_mode"], "actions": ["select"]})
 
 
+class _SimulatedEditClient:
+    """The simulated desktop plus the one thing a fixture cannot do: write the planned edit.
+
+    The plane, locator preconditions, state machine and store are the real S2 code; restoring the
+    reference implementation stands in for Trae's edit. This is simulated evidence only — it does
+    not prove Trae modifies files (that is the live test's job, docs/dev-status.md).
+    """
+
+    def __init__(self, plane):
+        self.plane = plane
+        self.channel, self.store, self.window_id = plane.channel, plane.store, plane.window_id
+
+    def send_task(self, project_path, task, **opts):
+        self.channel.reply_plan = [["思考中", 2], ["已按任务包补上切换按钮，测试全部通过 ✅", 1]]
+        record = self.plane.send_task(project_path, task, **opts)
+        if record["state"] == "submitted":
+            reference = (DEMO_APP / "index.html").read_text(encoding="utf-8")
+            Path(project_path, "index.html").write_text(reference, encoding="utf-8")
+        return record
+
+    def get_status(self, task_id):
+        return self.plane.get_status(task_id)
+
+    def read_result(self, task_id):
+        return self.plane.read_result(task_id)
+
+    def grant_approval(self, scope, **opts):
+        return self.plane.grant_approval(scope, **opts)
+
+
 def default_client():
     """The pre-G1 stand-in for an MCP client: the same three tool names over the in-process plane."""
     from main import build_plane
-    return build_plane("simulated")
+    return _SimulatedEditClient(build_plane("simulated"))
 
 
 def _resolve_node(node: str | None = None) -> str:
