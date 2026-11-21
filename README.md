@@ -29,15 +29,17 @@
   直连与控制平面两条路径共用 `states.py` 的选择器与 JS，演示子类里的副本已删；证据仍全是 fixture，
   控制平面的 live 通道没接（`--mode live` 拒绝启动），详见 [docs/security.md](docs/security.md)
 - ⬜ S5 评测：fixture 模拟 A/B/C 已实测并入库（`tests/bench/`）；**live 对照未实测**，
-  阻塞项是 R5（真实 Trae 会话发送需用户授权）与 G2（跨显示器 DPI），见 [docs/benchmark.md](docs/benchmark.md)
+  R5 已完成（发送点击风险 none），剩余阻塞是 G2（跨显示器 DPI）与 live A/B/C 本身，
+  见 [docs/benchmark.md](docs/benchmark.md)
 - ✅ 收尾（2026-11-21）：项目许可定为 MIT、依赖许可证审计落 [docs/licenses.md](docs/licenses.md)、
   移出版本库的调试日志与 `*.log` 忽略规则、集成门日期与 handoff 对齐；冻结契约零改动
 - ✅ 隐藏桌面与镜像（A 线，probe 侧）：隐藏桌面隔离运行靶应用、主机零干扰实测（E8/E15），
   Rust `gbmirror` 原生镜像/录制与 `gbdash` 只读观测面板，微信适配器与只读/零干扰发信实验；
-  全部证据在 [background-control.md](docs/experiments/background-control.md) 第 15–29 节，
+  本机已用 Rust 构建 gbmirror 并实测（隐藏桌面捕获/镜像、点击同步、主机零干扰），
+  Trae CN 兼容与 R5 复测见 [background-control.md](docs/experiments/background-control.md) 第 30–31 节，
   逐条复跑命令见 [docs/delivery-checklist.md](docs/delivery-checklist.md)
 - ⬜ S5 参赛交付：站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）
-- 测试现状：`pytest -m "not live"` → 566 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
+- 测试现状：`pytest -m "not live"` → 569 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
 - 每阶段「做到了什么、没做到什么」一律记在 [docs/dev-status.md](docs/dev-status.md)，不拿界面显示完成当交付
 
 ## 双人分工（本仓库执行约定）
@@ -87,7 +89,7 @@
 
 ```bash
 python -m pip install -e ".[dev]"
-pytest -m "not live"                 # 566 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
+pytest -m "not live"                 # 569 passed / 3 skipped（MCP 网关要 `mcp<2`）/ 8 条 live 默认 deselect
 
 # 控制平面（loopback only；--mode simulated 用 fixture 通道，不需要打开 Trae）
 python apps/desktop-agent/main.py --mode simulated --db ./guibridge.sqlite3 --port 8765
@@ -135,7 +137,7 @@ tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 +
 - 仅支持交互式桌面会话；锁屏 / UAC 安全桌面 / 远程桌面断开 / 多显示器 DPI 变化可能导致失效——
   状态报 `unknown` 并停止，不盲执行（探针 F8 实证漂移）。
 - **Trae 真实改码的 live 端到端仍未执行。** 安全约束只允许 chat 模式 live、禁止 agent 模式 live；
-  R5（真实会话发送以量化 `send_task` 的焦点风险）还需要用户本人授权。8 条 `@pytest.mark.live`
+  R5 已在本人授权下完成（发送点击实测 zero 干扰，2026-11-21 在 Trae CN 上复测）。8 条 `@pytest.mark.live`
   用例默认 deselect，不在 G1 之前伪称通过。
 - **审批模式不是点一下就能切的（F10）**：触发器只弹出一个 popover，模式要在其中选中 `手动审批` 那一行才改变，
   所以切换是一次被批准的 `select`（内含可信点击打开 + 按精确文本选行），代码永不选 `完全访问`；
@@ -147,7 +149,7 @@ tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 +
   不证明 GUI 真的动了手；`snapshots.image_path` 为 NULL，界面写「无截图」而不是放占位图。
 - **基准数字是 fixture 口径**：策略排序（C 优于 A、B 会假成功）成立，绝对成功率衡量的是录制快照；
   live 一栏逐行标了阻塞原因。
-- **不拿版本号当判据**：注册表基线是探针时的 3.6.13，本机实装回报 UA `Trae/1.107.1`、exe 元数据 3.4.20，
+- **不拿版本号当判据**：注册表基线是探针时的 3.6.13，本机实装回报 UA `TraeCN/1.107.1`、exe 元数据 3.4.20，
   三个号码互不一致；以 `semantic_id` 重定位能否命中当前 DOM 为准，整条链落空即 `locator_missing`，改版本需重跑探针。
 - **两个 MCP 入口并存**：`packages/mcp`（B 线冻结的 8 个工具，手写 stdio 帧，不依赖 mcp SDK）与
   `packages/mcp_gateway`（A 线 FastMCP，需 `mcp<2`，SDK 2.x 把 `FastMCP` 改名成了 `MCPServer`）。
@@ -155,8 +157,8 @@ tests/                    单测 + fixtures + `@pytest.mark.live` 集成测试 +
 - **Dashboard 只能看和批，不能提交任务**：dev-prompts S4 的约束（不新增控制通道），不是漏做。
 - **保留期只是配置项**：`EventStore(retention_days=30)` 与 `prune()` 都在，还没有调用方接线。
 - CDP 通道要求托管启动目标应用（仅 loopback 随机端口），实现见 `apps/desktop-agent/launch.py`。
-- **隐藏桌面镜像需要编译工具链**：原生镜像/录制用 `src/probe/gbmirror`（Rust，`cargo build --offline --release`），
-  本机没有 Rust 时只有 Python 镜像 `src/probe/hidden_mirror.py`（需 Pillow，且当前绑定保活会话）；
-  镜像/录制会显示真实画面，公开录屏须切 benign 靶。零干扰是采样观察值，<2 ms 盲区与 FocusGuard 相同。
+- **隐藏桌面镜像需要编译工具链**：原生镜像/录制用 `src/probe/gbmirror`（Rust，`cargo build --release`；
+  本机已用 Rust 1.100.0 构建并实测）。没有 Rust 时只有 Python 镜像 `src/probe/hidden_mirror.py`
+  （需 Pillow，且当前绑定保活会话）；镜像/录制会显示真实画面，公开录屏须切 benign 靶。零干扰是采样观察值，<2 ms 盲区与 FocusGuard 相同。
 - `apps/desktop-agent/registry.py` 是 pre-G1 的 locator 载入 shim，应由 `packages/semantic/locator_cache.py`
   取代，已列入合并待办（docs/handoff-a-to-b.md）。
