@@ -1,0 +1,1 @@
+"""WeChat foreground adapter (message-oriented; PHYSICAL_INPUT, pending B approval)."""

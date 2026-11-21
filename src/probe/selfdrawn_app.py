@@ -75,6 +75,8 @@ user32.BeginPaint.restype = wintypes.HDC
 user32.EndPaint.argtypes = [wintypes.HWND, ctypes.POINTER(PAINTSTRUCT)]
 user32.EndPaint.restype = wintypes.BOOL
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.SetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPCWSTR]
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.InvalidateRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT), wintypes.BOOL]
 gdi32.TextOutW.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.LPCWSTR, ctypes.c_int]
 gdi32.Rectangle.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
@@ -85,7 +87,7 @@ user32.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintype
 user32.DrawTextW.argtypes = [wintypes.HDC, wintypes.LPCWSTR, ctypes.c_int, ctypes.POINTER(wintypes.RECT), wintypes.UINT]
 gdi32.DeleteObject.argtypes = [wintypes.HANDLE]
 
-_state = {"hwnd": None, "clicks": 0}
+_state = {"hwnd": None, "clicks": 0, "title_status": False}
 
 
 def _paint(hwnd):
@@ -115,6 +117,8 @@ def _window_proc(hwnd, msg, wparam, lparam):
         return 0
     if msg == WM_LBUTTONDOWN:
         _state["clicks"] += 1
+        if _state["title_status"]:
+            user32.SetWindowTextW(hwnd, f"{APP_TITLE} clicked={_state['clicks']}")
         user32.InvalidateRect(hwnd, None, True)
         return 0
     if msg == WM_CLOSE:
@@ -143,6 +147,8 @@ def main() -> int:
     parser.add_argument("--w", type=int, default=420)
     parser.add_argument("--h", type=int, default=240)
     parser.add_argument("--auto-close-seconds", type=float, default=0)
+    parser.add_argument("--title-status", action="store_true")
+    parser.add_argument("--show-no-activate", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -158,13 +164,19 @@ def main() -> int:
     if not user32.RegisterClassW(ctypes.byref(wc)):
         raise ctypes.WinError(ctypes.get_last_error())
 
+    style = WS_OVERLAPPEDWINDOW
+    if not args.show_no_activate:
+        style |= WS_VISIBLE
     hwnd = user32.CreateWindowExW(
-        0, WINDOW_CLASS, APP_TITLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        0, WINDOW_CLASS, APP_TITLE, style,
         args.x, args.y, args.w, args.h, None, None, kernel32.GetModuleHandleW(None), None,
     )
     if not hwnd:
         raise ctypes.WinError(ctypes.get_last_error())
+    if args.show_no_activate:
+        user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
     _state["hwnd"] = hwnd
+    _state["title_status"] = args.title_status
     print(f"WINDOW_HANDLE={int(hwnd)}", flush=True)
     print(f"WINDOW_TITLE={APP_TITLE}", flush=True)
 
