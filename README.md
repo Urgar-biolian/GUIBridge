@@ -5,7 +5,9 @@
 语义控制中间件：CDP / UIA / OCR 多通道感知 → 稳定 semantic_id 定位 → 业务级 MCP 工具 → 状态验证与全动作审计。
 参赛方向：Qoder 高校创造力大赛｜目标平台：Windows｜首个适配器：Trae IDE。
 
-## 当前进度（2026-11-19，G1 集成后）
+许可证：[MIT](LICENSE)；第三方依赖许可审计见 [docs/licenses.md](docs/licenses.md)。
+
+## 当前进度（2026-11-21，收尾后）
 
 - ✅ S0 技术探针：GO，路线修正为 CDP 优先；提交→状态→读回闭环实测成功（[src/probe/PROBE_REPORT.md](src/probe/PROBE_REPORT.md)）
 - ✅ PRD、分阶段开发提示词、项目骨架、接口契约、数据库 schema
@@ -28,6 +30,8 @@
   控制平面的 live 通道没接（`--mode live` 拒绝启动），详见 [docs/security.md](docs/security.md)
 - ⬜ S5 评测：fixture 模拟 A/B/C 已实测并入库（`tests/bench/`）；**live 对照未实测**，
   阻塞项是 R5（真实 Trae 会话发送需用户授权）与 G2（跨显示器 DPI），见 [docs/benchmark.md](docs/benchmark.md)
+- ✅ 收尾（2026-11-21）：项目许可定为 MIT、依赖许可证审计落 [docs/licenses.md](docs/licenses.md)、
+  移出版本库的调试日志与 `*.log` 忽略规则、集成门日期与 handoff 对齐；冻结契约零改动
 - ⬜ S5 参赛交付：站点公开发布与录屏需用户确认后执行（公开发布属外部可见操作）
 - 测试现状：`pytest -m "not live"` → 528 通过 / 3 跳过（MCP 网关需 `mcp<2`）/ 8 条 live 默认 deselect
 - 每阶段「做到了什么、没做到什么」一律记在 [docs/dev-status.md](docs/dev-status.md)，不拿界面显示完成当交付
@@ -61,6 +65,7 @@
 | [docs/architecture/guibridge-design.md](docs/architecture/guibridge-design.md) | 任务书对齐架构：Router / FocusGuard / Trae 契约（草案） |
 | [docs/research/competitor-analysis.md](docs/research/competitor-analysis.md) | agent-desktop 公开能力对比（仅公开资料） |
 | [docs/research/originality-log.md](docs/research/originality-log.md) | 原创性与第三方依赖许可证记录 |
+| [docs/licenses.md](docs/licenses.md) | 依赖许可证审计：逐包清单、MIT 兼容结论、未覆盖项 |
 | [docs/experiments/background-control.md](docs/experiments/background-control.md) | Phase 1 E1–E6 后台控制实验：环境、结果、四态、验收与限制 |
 | [docs/api.md](docs/api.md) | MCP 8 工具 + 本地 REST/SSE 规范与错误码 |
 | [docs/sql.md](docs/sql.md) | SQLite 事件存储设计（DDL：packages/events/schema.sql） |

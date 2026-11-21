@@ -1,7 +1,7 @@
 # 原创性与依赖记录（Originality Log）
 
 状态：Phase 0 初稿（2026-11-17）
-维护规则：每次引入新依赖、新算法或参考新公开资料时追加条目；契约与结论由 A/B 双人复核。本文件不替代许可证原文，发布前需做一次完整依赖审计。
+维护规则：每次引入新依赖、新算法或参考新公开资料时追加条目；契约与结论由 A/B 双人复核。本文件不替代许可证原文；完整依赖审计已于 2026-11-21 完成，结论与逐包清单见 [docs/licenses.md](../licenses.md)。
 
 ## 1. 属于公共技术原理的部分
 
@@ -60,19 +60,21 @@
 
 ## 5. 第三方依赖与许可证（已核验版本）
 
+> 权威清单（含传递依赖、缺口与 mcp 版本偏差）见 [docs/licenses.md](../licenses.md)；下表按 2026-11-21 的 `.venv` 取数。
+
 ### Python（`pyproject.toml`，本机元数据核验）
 
 | 依赖 | 版本 | 许可证 | 用途 |
 |---|---|---|---|
 | uiautomation | 2.0.29 | Apache-2.0 | UIA 访问 |
 | mss | 10.2.0 | MIT | 截图 |
-| PyYAML | 6.0.2 | MIT | 定位器配置 |
-| websockets | 15.0.1 | BSD-3-Clause | CDP 连接 |
-| FastAPI | 0.138.0 | MIT | 桌面代理 API |
-| Uvicorn | 0.49.0 | BSD-3-Clause | ASGI 服务 |
-| mcp | 1.22.0 | MIT | MCP 服务端 |
-| rapidocr-onnxruntime | 1.4.4 | Apache-2.0 | OCR（可选） |
-| pytest | 9.1.1 | MIT | 测试 |
+| PyYAML | 6.0.3 | MIT | 定位器配置 |
+| websockets | 17.4 | BSD-3-Clause | CDP 连接 |
+| FastAPI | 0.163.1 | MIT | 桌面代理 API |
+| Uvicorn | 0.54.0 | BSD-3-Clause | ASGI 服务 |
+| mcp | 2.3.0（声明 `>=1.0,<2`） | MIT | MCP 服务端 |
+| rapidocr-onnxruntime | 未安装 | — | OCR（可选，未审计） |
+| pytest | 9.2.0 | MIT | 测试 |
 
 ### 前端（`apps/dashboard`，本机 node_modules 元数据核验）
 
@@ -86,9 +88,10 @@
 
 ### 待办
 
-- [ ] 审计传递依赖（numpy/opencv/onnxruntime 等）许可证，并单独登记 OCR 模型许可。
-- [ ] 审计前端传递依赖许可证。
-- [ ] 发布前生成完整依赖清单（含版本锁定文件）。
+- [x] 审计传递依赖（Python 42 个发行版全部为宽松许可；OCR 可选闭包未安装、未审计）。
+- [x] 审计前端传递依赖许可证（50 个包，全 MIT/ISC/BSD/Apache-2.0）。
+- [x] 生成完整依赖清单（`docs/licenses.md`，按本机 `.venv` 与 `node_modules` 取数；无锁定文件）。
+- [ ] OCR 通道如启用，安装 `ocr` extra 后补审 onnxruntime/opencv 闭包与模型许可。
 - [ ] 所有新增依赖先登记后引入。
 
 ## 6. 变更记录
@@ -97,3 +100,4 @@
 |---|---|---|
 | 2026-11-17 | Phase 0 初稿：公共原理、独立设计、相似性、依赖许可证 | 待 B 线复核 |
 | 2026-11-17 | 复核 agent-desktop 公开 README（Apache-2.0、三平台 AX/UIA/AT-SPI、CLI+C 库+MCP、headless 声明、`error.disposition.retry` 重试纪律），更新 competitor-analysis §2/§3；修正 §3 交叉引用指向 `guibridge-design.md` §3/§4/§5；仅公开资料，无源码引用 | 待 B 线复核 |
+| 2026-11-21 | 收尾：完成依赖许可证审计并落 `docs/licenses.md`；项目许可定为 MIT，新增根目录 `LICENSE` | 待 B 线复核 |

@@ -364,3 +364,26 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 8. **审批 popover 还没成为契约的一部分**：`locators.yaml` 里 `trae.chat.approval_mode` 只有触发器两条链，
    弹层与行的选择器暂时硬编码在 `states.py`（由 `tests/test_approval_popover.py` 钉住）。
    把它们升成 semantic_id 属冻结契约变更，需双人 approve——提案已写进 `docs/handoff-a-to-b.md`。
+
+---
+
+## 收尾（2026-11-21）
+
+只做收尾杂务，不扩功能、不动契约默认、不推远端。
+
+| 项 | 结果 |
+|---|---|
+| 项目许可 | 根目录新增 `LICENSE`（MIT，2026 GUIBridge contributors）；`pyproject.toml` 加 `license`；`apps/dashboard` 与 `examples/demo-app` 的 `package.json` 加 `license` |
+| 依赖许可证审计 | 新增 `docs/licenses.md`：本机 `.venv` 42 个第三方发行版（另含 pip）+ dashboard 50 个 npm 包，全部 MIT / MIT-0 / BSD-2 / BSD-3 / Apache-2.0 / ISC / PSF，与 MIT 相容；`originality-log.md` §5 待办结清并指向该文件 |
+| 泄漏检查 | `src/probe/cli_chat.log` 移出版本库（文件留在盘上，被新加的 `*.log` 忽略）；`tests/bench/results/` 改为 `results/*` + 保留 `*.json` 证据；新增文件无本机绝对路径与用户名 |
+| 门表统一 | `docs/team-plan.md` 改为 G1（11/20）→ G2–G4 live 整合（11/23–27）→ G5（11/30），与 README、`handoff-a-to-b.md` 一致；G1 行注明「合并与 F10 已落，live 项不算结清」 |
+| 验证 | `pytest -q -m "not live"` → 528 passed / 3 skipped / 8 deselected；`npm run build` 通过；demo-app `node --test` 8/8；五个冻结契约文件零改动 |
+
+仍阻塞、没有代替品的事：
+
+1. **未推送**：`integrate/g1`（`d7b9c77` + `9804c69` + 本次收尾提交）只在本地，推与否由用户决定。
+2. **live 证据仍为零**：8 条 live 用例 deselect；R5 需用户本人授权；控制平面仍无 live 通道（G1 未达成项 7）。
+3. **G2–G5 未过**：跨显示器 DPI、经真实 MCP + Dashboard 的端到端 live、站点公开与录屏都要用户确认后才能做。
+4. **routed 替换默认仍需双人 approve**：本次只做「不动默认」的部分（见任务 #7 未完成项）。
+5. **环境偏差记录在案**：`.venv` 的 `mcp==2.3.0` 不在声明范围 `>=1.0,<2` 内，3 条网关用例按设计 skip；
+   `httpx` 声明了但未安装、也未在代码/测试中使用。交付复核应在声明范围内重建环境重跑。
