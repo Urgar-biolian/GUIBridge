@@ -859,3 +859,41 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 - **浏览器真实点击实测**：`liveimg.naturalWidth×Height = 1280×732`、`complete=true`（MJPEG 真被解码渲染），元信息条「流运行中 · 帧序号 36 · 实测 8.9 帧/秒 · 捕获 69ms · 观看者 1」；3s 内 **seq 278→305**（≈9fps 持续递增）；点停止 ⇒ `src` 清空、画面框隐藏、按钮态复位；会话切到 wechat ⇒ 私聊勾选框显现，未勾选点开始 ⇒ **中文门控提示且不起流**（未把私聊画面拉进浏览器）。in-app viewport 隐藏⇒**未做像素级目视**，以解码尺寸/seq 递增/DOM 状态为证。
 - **单测**：gbdash 由 17 → **26 例**（新增 9：`_read_exact` 短读/EOF、live_gate 隐私+存活+未构建、参数钳位与观看者计数、死流替换、并发上限 429、无流 stop/status 409、`live_reap_once` 只回收无人观看且空闲/已死的流、MJPEG 分段头与 seq 及观看者释放、viewer 断 pipe 不抛异常）+ 页面守护测试扩到 10 个 live id/中文标签 ⇒ 全基线 **375 passed/1 skipped**。全部用 stub/假管道，**单测里不做真实捕获**。
 - **收尾**：用户那轮原生镜像窗口 pid 58008 已自行退出（`OpenProcess` 取不到句柄）⇒ 删除此前为绕过 exe 占用而改名的 `gbmirror.running-58008.exe`；验证结束后 `Win32_Process` 查无任何 `gbmirror.exe` 残留（流全部 terminate）。边界不变：仍属 probe 侧单人 approve，未触碰 `apps/desktop-agent` 与冻结能力表。
+
+## 30 本机复跑：E8 隐藏桌面 + Python 镜像回退（2026-11-21，B 侧）
+
+环境：Windows `10.0.26200`、Python 3.13.7（仓库 `.venv`）、uiautomation 2.0.29、Pillow 13.0.0。
+**本机没有 Rust 工具链**（`cargo` 不存在），`src/probe/gbmirror` 未构建；`hidden_mirror.py` 又绑定微信保活会话，
+故镜像用**同一套项目代码的 Python 路径**（`hidden_capture.capture_stitch` 在 `DesktopWorker` 上截图 + Tk 主桌面窗口）
+配 benign 靶 `native_test_app` 实测。临时 harness 与原始 JSON 只在 `var/experiments/`（gitignored），不入库。
+
+### 30.1 E8 复跑（`src/probe/experiment_hidden_desktop.py`，run `20261121T033239Z`）
+
+- `CreateDesktopW`/`CloseDesktop` 均成功；`DesktopWorker.desktop_ok=true`。
+- 5 种操作 × 2 试验：效果验证 **10/10**；隐藏窗口 **10/10** 不出现在主机 `EnumWindows`。
+- **9/10** 为 `success_no_interference_observed`；唯一例外是 UIA `InvokePattern` 的一次试验：
+  `cursor_displacement=562` 且 `external_input_during_window=true`——是真实鼠标移动污染，主机前台始终未变（`before==after`）。
+- 同桌面基线 1/1 为 `success_with_interference`（主机前台被切走），与第 16 节结论一致。
+
+### 30.2 主桌面镜像（Python 回退，run `mirror_20261121T033344Z` / `20261121T033507Z`）
+
+| 指标 | 纯显示（25.4 s） | 显示 + 隐藏桌面点击（20.3 s） |
+|---|---|---|
+| 帧数 | 138 | 100 |
+| 单帧捕获耗时（中位/最大） | 58.1 ms / 158 ms | 88.8 ms / 97.1 ms |
+| 主机光标位移（全程最大） | 0 | 0 |
+| 主机前台 | 全程=镜像窗口自身（无切换） | 同左；点击前后不变 |
+| 隐藏桌面窗口数 | 1 | 点击后 3（IME/helper 窗） |
+| 效果回读 | — | `status: clicked=0` → `clicked=1`（worker 侧读取），镜像画面同步显示 |
+
+- 点击在第 8 s 由 host 线程向隐藏桌面按钮 `PostMessage(BM_CLICK)`，效果在 worker 侧回读确认，主机零干扰。
+- **裁剪必须钉住目标窗口 rect**：点击后隐藏桌面多出 IME/helper 窗，按「所有可见窗并集」裁剪会把画布撑到虚拟屏、
+  目标缩小到角落（第 28.6 节 Rust 路径用焦点主窗口 rect 已解决；Python 回退需显式指定）。
+- Python 回退的刷新受 Tk 120 ms 轮询与逐帧 PNG 往返限制（≈4–7 fps），低于 gbmirror 实测 19–23 fps；
+  `PrintWindow` 本身约 50–90 ms/帧（benign GDI 靶），与第 28.2 节「语言无关天花板」一致。
+- 证据：`var/experiments/mirror_20261121T033344Z/`、`...033507Z/`（`mirror_python.json` + 镜像窗口 PNG，均为 benign 靶，gitignored）。
+
+### 30.3 结论与未验证项
+
+本机实测复现：**隐藏桌面里操控应用（消息/UIA 级）效果可验证、主机光标与前台零干扰；镜像窗口能把该隐藏桌面画面实时显示在主桌面，
+并且操控后的状态变化同步可见。** 未验证：Rust `gbmirror` 的构建与 19–23 fps 数字（本机无工具链）、真实应用（Electron/微信）在隐藏桌面的镜像（沿用第 16.4 节限制）。
