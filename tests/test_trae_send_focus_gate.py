@@ -3,7 +3,8 @@
 The instrument can send a live write to real Trae, so its default-refuse gate and
 its fixed harmless message are locked here. These tests exercise ONLY the refusal
 path and module constants — no live write, no CDP connection, no authorization.
-The live measurement itself remains pending fresh R5 authorization."""
+The live measurement itself runs only under explicit owner authorization (chat-only);
+the 2026-11-21 rerun against Trae CN is recorded in the probe docstring."""
 
 import importlib.util
 import subprocess
@@ -62,3 +63,15 @@ def test_is_git_repo_helper(tmp_path):
     assert mod._is_git_repo(str(nongit)) is False
     repo_root = Path(__file__).resolve().parents[1]
     assert mod._is_git_repo(str(repo_root)) is True
+
+
+def test_find_trae_hwnd_includes_trae_cn_binary(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(
+        mod.rx, "process_pids", lambda name: [11] if name == "Trae CN.exe" else []
+    )
+    monkeypatch.setattr(mod.wh, "enum_top_level_windows", lambda: [
+        {"hwnd": 7, "pid": 11, "title": "guibridge-demo-workspace - TRAE CN", "visible": True},
+        {"hwnd": 8, "pid": 11, "title": "unrelated", "visible": True},
+    ])
+    assert mod.find_trae_hwnd() == 7

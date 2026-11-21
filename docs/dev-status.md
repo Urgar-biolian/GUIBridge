@@ -341,7 +341,7 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 ### G1 之后仍然没做到的（不粉饰）
 
 1. **live 端到端仍未执行**：8 条 live 用例继续 deselect。R5（真实会话发送以量化 `send_task` 的焦点风险）
-   要用户本人授权；agent 模式 live 依旧禁止。
+   已于 2026-11-17 获本人授权完成、2026-11-21 在 Trae CN 上复测（见文末）；agent 模式 live 仍限于隔离 demo。
 2. ~~**F10 审批弹层修复还没进正式路径**~~ → **已于 2026-11-19 进两条正式路径**：`adapter.py::force_manual_approval`
    把切换当作**一次被 gate 的 `select`**（通道内含「可信点击打开 popover → 按精确文本选中 `手动审批` 行」，
    失败时 `approval_mode_read.reason` 说明缺哪一步：`gate_refused` / `option_not_offered` / `no_change`）；
@@ -381,8 +381,8 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 
 仍阻塞、没有代替品的事：
 
-1. **未推送**：`integrate/g1`（`d7b9c77` + `9804c69` + 本次收尾提交）只在本地，推与否由用户决定。
-2. **live 证据仍为零**：8 条 live 用例 deselect；R5 需用户本人授权；控制平面仍无 live 通道（G1 未达成项 7）。
+1. **已推送**：`main` 已推至 Gitee（`4df1bc0`，含 `integrate/g1` 的合并、F10、收尾与 A 线隐藏桌面/镜像）。
+2. **live 证据仍有限**：8 条 live 用例 deselect；R5 已授权完成（2026-11-17，2026-11-21 复测）；控制平面仍无 live 通道（G1 未达成项 7）。
 3. **G2–G5 未过**：跨显示器 DPI、经真实 MCP + Dashboard 的端到端 live、站点公开与录屏都要用户确认后才能做。
 4. **routed 替换默认仍需双人 approve**：本次只做「不动默认」的部分（见任务 #7 未完成项）。
 5. **环境偏差记录在案**：`.venv` 的 `mcp==2.3.0` 不在声明范围 `>=1.0,<2` 内，3 条网关用例按设计 skip；
@@ -402,3 +402,23 @@ Node 便携版 `C:/Users/<you>/tools/node/node.exe`（v24.22.3）用于真实 `n
 `Pillow 13.0.0` 装进 `.venv` 以运行 A 新增的 `tests/test_gbdash.py` 等用例；`pytest -m "not live"` →
 **566 passed, 3 skipped, 8 deselected**；冻结契约文件零改动。A 的审计见 `docs/research/license-audit.md`
 （57 Python / 24 Rust crate / 50 npm，含 `certifi`、`tqdm` 的 MPL-2.0 文件级义务说明），与本机 `docs/licenses.md` 结论一致。
+
+---
+
+## Rust gbmirror 真机实测与 R5 复测（2026-11-21）
+
+- **工具链**：rustup `stable-x86_64-pc-windows-msvc` 1.100.0 装于 D 盘（MSVC 14.43 + Windows SDK 复用本机 VS 2022）；
+  `cargo build --release` 在线取 crates，5m59s 通过，`target/` 未入库。
+- **capture 模式**（benign 隐藏桌面 `GBRustMirror_20261121T040607Z`，run `gbmirror_20261121T040605Z`）：
+  20/20 帧成功，单帧 **16.55 ms 均值**（14.97–17.86 ms），BMP 403 KB；`fg_changed=false`、光标位移 0 ⇒
+  `zero_interference_observed=true`。本机比 §28.2 记录的 44 ms 快，说明那是环境值而非硬下限。
+- **镜像 UI**：registry 指向同一 benign 会话，`--width 1280 --fps 30`；按 `seq` 增量实测 **≈27.5 帧/s**（30 上限内），
+  镜像窗口 1:1 显示隐藏桌面；第 55 s 隐藏桌面点击后画面同步 `clicked=0→1`，主机前台/光标未变。
+  status 的 `fps` 字段是瞬时值（69.8→21.2），不作为稳定帧率结论。
+- **Trae CN 兼容修正**（非冻结文件）：`find_trae_hwnd` 识别 `Trae CN.exe`；`CdpTraeAdapter._target` 优先 URL 含
+  `workbench` 的页面（否则会连到 `floatingButton.html` 并报 `NO_TAB`）。新增 3 例测试。
+- **R5 复测** run `20261121T041015Z`（用户本次明确授权；chat-only、固定无害消息、隔离 demo、非真实项目）：
+  `cursor=0`、`focus_switch=false`、`ext=false`、`claimed_done`、`reply_ok=true`、`workspace_unchanged=true`。
+  与 A 侧 2026-11-17 授权轮一致：`send_task` 发送点击风险 none；HIGH 影响仍须审批令牌。
+- **仍未验证**：真实应用（Electron/微信）隐藏桌面镜像、Media Foundation 录制、G2–G5 live 端到端。
+- 证据（gitignored）：`var/experiments/gbmirror_20261121T040605Z/`、`var/experiments/20261121T041015Z/`。

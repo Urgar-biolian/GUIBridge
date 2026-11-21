@@ -32,7 +32,7 @@ TRIALS = 5
 
 
 def find_trae_hwnd() -> int | None:
-    pids = set(rx.process_pids("Trae.exe"))
+    pids = set(rx.process_pids("Trae.exe")) | set(rx.process_pids("Trae CN.exe"))
     candidates = [
         w for w in wh.enum_top_level_windows()
         if w["visible"] and w["pid"] in pids and "trae" in w["title"].lower()

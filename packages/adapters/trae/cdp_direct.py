@@ -92,6 +92,9 @@ class CdpTraeAdapter(AppAdapter):
             raise AdapterError("locator_missing", f"CDP unreachable on {self.port}: {e}") from e
         pages = [t for t in targets if t.type == "page"]
         trae = [t for t in pages if "trae" in (t.title + t.url).lower()]
+        workbench = [t for t in trae if "workbench" in t.url.lower()]
+        if workbench:
+            trae = workbench
         if not trae:
             raise AdapterError("locator_missing", "no Trae page target")
         return trae[0]

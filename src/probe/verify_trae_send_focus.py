@@ -22,8 +22,11 @@ var/experiments/<run_id>/trae_send_focus.json (gitignored).
 Status: live measurement RUN under owner authorization 2026-11-17 (chat-only):
 clean trials 20261118T044436Z / 20261118T044518Z (latter claimed_done + reply OK +
 zero workspace change) grade the send_task send-click risk none; a polluted first
-trial 20261118T044332Z (external input) was discarded. Without --authorize-live-write
-the refusal gate still connects to nothing and exits 3.
+trial 20261118T044332Z (external input) was discarded. Re-run on Trae CN
+(2026-11-21, run 20261121T041015Z, fresh owner authorization) reproduced
+cursor=0 / focus_switch=false / ext=false, claimed_done, reply OK, workspace
+unchanged. Without --authorize-live-write the refusal gate still connects to
+nothing and exits 3.
 """
 
 from __future__ import annotations

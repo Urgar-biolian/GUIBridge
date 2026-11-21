@@ -896,4 +896,58 @@ MF SinkWriter：`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=1` 优先硬件 H.264 M
 ### 30.3 结论与未验证项
 
 本机实测复现：**隐藏桌面里操控应用（消息/UIA 级）效果可验证、主机光标与前台零干扰；镜像窗口能把该隐藏桌面画面实时显示在主桌面，
-并且操控后的状态变化同步可见。** 未验证：Rust `gbmirror` 的构建与 19–23 fps 数字（本机无工具链）、真实应用（Electron/微信）在隐藏桌面的镜像（沿用第 16.4 节限制）。
+并且操控后的状态变化同步可见。** 当时未验证 Rust `gbmirror` 的构建与 19–23 fps 数字（本机无工具链）——该缺项已由第 31 节补齐；
+真实应用（Electron/微信）在隐藏桌面的镜像仍未验证（沿用第 16.4 节限制）。
+
+## 31 Rust 工具链安装、gbmirror 真机实测与 R5 复测（2026-11-21）
+
+### 31.1 环境与构建
+
+- 本机此前无 Rust。用 rustup 安装 `stable-x86_64-pc-windows-msvc` **1.100.0**，`RUSTUP_HOME`/`CARGO_HOME` 均放 D 盘；
+  链接使用本机已装的 VS 2022 Build Tools（MSVC 14.43.34808）与 Windows SDK 10，未额外装 SDK。
+- 官方源下载实测约 95 KB/s，改用 rsproxy 镜像（rustup 仍按清单哈希校验组件）。`cargo build --release` 在线取 crates，
+  **5m59s 通过**；唯一告警是 `capture.rs::WinInfo` 的 `hwnd/printwindow/blit` 未读（既有，不修）。
+- 二进制：`src/probe/gbmirror/target/release/gbmirror.exe`（352 KB）；`target/` 仍 gitignored。
+
+### 31.2 capture 模式（benign 隐藏桌面，run `gbmirror_20261121T040605Z`）
+
+桌面 `GBRustMirror_20261121T040607Z`、目标 `native_test_app`、`--frames 20`：
+
+| 指标 | 结果 |
+|---|---|
+| 成功帧 | 20/20，BMP 403 KB，`content_bbox=[660,260,420,240]`，窗口数 1 |
+| 单帧捕获 | 14.97–17.86 ms，均值 **16.55 ms**（≈60 fps 捕获上限） |
+| 主机前台 | `fg_before==fg_after`，`fg_changed=false`/`fg_changed_during=false` |
+| 主机光标 | 位移 0，窗口内最大位移 0 |
+| 零干扰判定 | `zero_interference_observed=true` |
+
+与第 28.2 节记录的约 44 ms/帧不同：本机单窗口 GDI 靶明显更快，说明 44 ms 是具体环境值而非语言/接口硬下限。
+
+### 31.3 镜像 UI 与实时联动
+
+- 以 scratch holder 建桌面并启动 `native_test_app`，写 registry（`native_test_app` / alive），再起
+  `gbmirror --registry … --width 1280 --fps 30`。picker 自动选中首项，左栏显示 alive 与捕获信息。
+- 交付帧率按 status 的 `seq` 增量：第 12 s `seq=398`、第 55 s `seq=1581`，43 s 内 1183 帧 ⇒ **≈27.5 帧/s**（`--fps 30` 上限内）。
+  status 的 `fps` 字段（69.8 → 21.2）与左栏「capture … fps」是不同窗口期的瞬时值，波动大，**不应据此判断稳定帧率**。
+- 第 55 s holder 在隐藏桌面 `PostMessage(BM_CLICK)`：worker 回读 `clicked=0→1`，镜像窗口同步显示
+  `status: clicked=1`（截图 `mirror_before_click.png` / `mirror_after_click.png`）。
+- 主机侧：holder 记录的前台 hwnd 点击前后相同，鼠标未动；镜像窗口自身是主机可见窗口（`SC_MAXIMIZE` 最大化），
+  这是产品行为而非隐藏桌面干扰。关闭用无 `/F` 的 taskkill（WM_CLOSE），进程 exit 0；holder 随后 `terminate` 靶进程并
+  `CloseDesktop`，无残留。
+- 证据：`var/experiments/gbmirror_20261121T040605Z/`（gitignored）。
+
+### 31.4 Trae CN 兼容性与 R5 复测
+
+- 本机安装是 Trae CN（`Trae CN.exe`，产品 3.4.20，UA `TraeCN/1.107.1 … Electron/39.2.7`），
+  CDP 9222 以 demo 工作区启动后窗口标题 `guibridge-demo-workspace - TRAE CN`。
+- 两处非冻结代码的兼容修正（原逻辑只适配 `Trae.exe`）：
+  - `src/probe/trae_cdp_focus.py::find_trae_hwnd` 同时识别 `Trae.exe` 与 `Trae CN.exe`（否则 R5 仪器 ABORT）。
+  - `packages/adapters/trae/cdp_direct.py::_target` 优先选 URL 含 `workbench` 的页面。Trae CN 的 `/json` 中
+    `floatingButton.html` 排在 workbench 页之前，旧逻辑 `trae[0]` 会连到悬浮按钮页，所有定位器报 `NO_TAB`。
+- R5（chat-only、固定消息「请只回复 OK 两个字母，不要执行任何其他操作。」、`--project-path <隔离 demo>\guibridge-demo-workspace`
+  隔离 demo、非真实项目）run **`20261121T041015Z`**：
+  `cursor_displacement=0`、`unexpected_focus_switch=false`、`external_input_during_window=false`、`event_hook_active=true`；
+  `state=claimed_done`、`reply_ok=true`、`workspace_unchanged=true`（前后 git 变更均为空）；回复文本可见 `手动审批`（审批模式手动）。
+- 结论与 A 侧 2026-11-17 授权轮一致：`send_task` 发送点击风险 none；HIGH 影响 + 非幂等仍按原则 7 在无令牌时拒绝、有令牌走审批。
+- 新增 3 例守护：`test_find_trae_hwnd_includes_trae_cn_binary`、`test_target_prefers_workbench_over_floating_chat`、
+  `test_target_without_workbench_keeps_first_trae_page`。
